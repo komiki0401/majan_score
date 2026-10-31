@@ -30,3 +30,11 @@ export function localDay(date=new Date()):string{return `${date.getFullYear()}-$
 export function validDay(day:string):boolean{if(!/^\d{4}-\d{2}-\d{2}$/.test(day)||day<'1900-01-01'||day>'9999-12-31')return false;const d=new Date(day+'T00:00:00Z');return Number.isFinite(d.getTime())&&d.toISOString().slice(0,10)===day;}
 export function gameDay(game:Game):string{return game.playedOn??localDay(new Date(game.date));}
 export function forDay(state:State,day:string):State{return day==='all'?state:{...state,games:state.games.filter(g=>gameDay(g)===day)};}
+
+/** Results run by play date, then recording order within the same day. */
+export function orderedGames(state:State):Game[]{return [...state.games].sort((a,b)=>gameDay(a).localeCompare(gameDay(b)));}
+export function pointProgress(state:State){
+ const games=orderedGames(state);
+ const players=state.players.filter(p=>games.some(g=>g.rows.some(r=>r.playerId===p.id)));
+ return {games,series:players.map(player=>{let total=0;return {...player,values:[0,...games.map(game=>{total=Math.round((total+(game.rows.find(row=>row.playerId===player.id)?.point??0))*10000)/10000;return total;})]};})};
+}

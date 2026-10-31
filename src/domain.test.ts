@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {calculate,fromPoints,standings,gameDay,forDay,localDay,validDay,defaultRules,csv,emptyState} from './domain';
+import {calculate,fromPoints,standings,orderedGames,pointProgress,gameDay,forDay,localDay,validDay,defaultRules,csv,emptyState} from './domain';
 const input=(scores:number[])=>scores.map((score,i)=>({playerId:String(i),score}));
 describe('score calculation',()=>{
  it('calculates rank, uma and oka with zero sum',()=>{const rows=calculate(input([40000,30000,20000,10000]),defaultRules);expect(rows.map(x=>x.point)).toEqual([50,10,-20,-40]);expect(rows.reduce((a,x)=>a+x.point,0)).toBe(0);});
@@ -28,4 +28,15 @@ describe('daily results',()=>{
  it('reads old games without a played date using the local calendar',()=>{const {playedOn,...legacy}=state.games[0];expect(gameDay(legacy)).toBe(localDay(new Date(legacy.date)));});
  it('validates dates including leap days and impossible dates',()=>{expect(validDay('2024-02-29')).toBe(true);for(const d of ['','2026-02-29','2026-04-31','2026-5-5','1899-12-31','bad'])expect(validDay(d)).toBe(false);});
  it('exports only selected games and includes the played date',()=>{const output=csv(forDay(state,'2026-05-05'));expect(output).toContain('対局日');expect(output).toContain('2026-05-05');expect(output).not.toContain('2026-06-07');});
+});
+
+
+describe('point progress',()=>{
+ const players=[{id:'a',name:'田中'},{id:'b',name:'佐藤'},{id:'c',name:'未参加'}];
+ const game=(id:string,playedOn:string,rows:{playerId:string;point:number}[])=>({id,playedOn,date:'2026-11-01T00:00:00Z',table:'1',rules:defaultRules,revisions:[],rows:rows.map((r,i)=>({...r,score:null,rank:i+1}))});
+ const state={...emptyState,players,games:[game('june','2026-06-07',[{playerId:'b',point:-3}]),game('may1','2026-05-05',[{playerId:'a',point:10.1234}]),game('may2','2026-05-05',[{playerId:'a',point:-5.1234},{playerId:'b',point:0}])]};
+ it('orders by play date while retaining same-day recording order',()=>{expect(orderedGames(state).map(g=>g.id)).toEqual(['may1','may2','june']);expect(state.games[0].id).toBe('june');});
+ it('starts at zero, accumulates exact decimals and carries absent players forward',()=>{const {series}=pointProgress(state);expect(series.map(p=>p.id)).toEqual(['a','b']);expect(series[0].values).toEqual([0,10.1234,5,5]);expect(series[1].values).toEqual([0,0,0,-3]);});
+ it('resets the selected day to zero and matches final rankings',()=>{const day=forDay(state,'2026-06-07');expect(pointProgress(day).series[0].values).toEqual([0,-3]);for(const p of pointProgress(state).series)expect(p.values.at(-1)).toBe(standings(state).find(r=>r.id===p.id)?.total);});
+ it('handles empty results',()=>expect(pointProgress({...state,games:[]})).toEqual({games:[],series:[]}));
 });
