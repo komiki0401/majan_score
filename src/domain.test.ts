@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {calculate,fromPoints,standings,orderedGames,pointProgress,gameDay,forDay,localDay,validDay,defaultRules,csv,emptyState} from './domain';
+import {calculate,fromPoints,standings,orderedGames,pointProgress,rankProgress,gameDay,forDay,localDay,validDay,defaultRules,csv,emptyState} from './domain';
 const input=(scores:number[])=>scores.map((score,i)=>({playerId:String(i),score}));
 describe('score calculation',()=>{
  it('calculates rank, uma and oka with zero sum',()=>{const rows=calculate(input([40000,30000,20000,10000]),defaultRules);expect(rows.map(x=>x.point)).toEqual([50,10,-20,-40]);expect(rows.reduce((a,x)=>a+x.point,0)).toBe(0);});
@@ -39,4 +39,13 @@ describe('point progress',()=>{
  it('starts at zero, accumulates exact decimals and carries absent players forward',()=>{const {series}=pointProgress(state);expect(series.map(p=>p.id)).toEqual(['a','b']);expect(series[0].values).toEqual([0,10.1234,5,5]);expect(series[1].values).toEqual([0,0,0,-3]);});
  it('resets the selected day to zero and matches final rankings',()=>{const day=forDay(state,'2026-06-07');expect(pointProgress(day).series[0].values).toEqual([0,-3]);for(const p of pointProgress(state).series)expect(p.values.at(-1)).toBe(standings(state).find(r=>r.id===p.id)?.total);});
  it('handles empty results',()=>expect(pointProgress({...state,games:[]})).toEqual({games:[],series:[]}));
+});
+
+
+describe('rank progress',()=>{
+ const players=[{id:'a',name:'田中'},{id:'b',name:'佐藤'}];
+ const game=(id:string,playedOn:string,rows:{playerId:string;rank:number;point:number}[])=>({id,playedOn,date:playedOn+'T01:00:00Z',table:'1',rules:defaultRules,revisions:[],rows:rows.map(r=>({...r,score:null}))});
+ const state={...emptyState,players,games:[game('june','2026-06-07',[{playerId:'a',rank:4,point:100}]),game('may','2026-05-05',[{playerId:'a',rank:1,point:-20},{playerId:'b',rank:1,point:10}])]};
+ it('uses recorded half-game ranks, with ties and missing entries',()=>{expect(rankProgress(state).series.map(p=>p.values)).toEqual([[1,4],[1,null]]);});
+ it('respects date filters and has no imaginary starting rank',()=>{expect(rankProgress(forDay(state,'2026-06-07')).series.map(p=>p.values)).toEqual([[4]]);expect(rankProgress({...state,games:[]})).toEqual({games:[],series:[]});});
 });

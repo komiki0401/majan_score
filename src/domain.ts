@@ -38,3 +38,8 @@ export function pointProgress(state:State){
  const players=state.players.filter(p=>games.some(g=>g.rows.some(r=>r.playerId===p.id)));
  return {games,series:players.map(player=>{let total=0;return {...player,values:[0,...games.map(game=>{total=Math.round((total+(game.rows.find(row=>row.playerId===player.id)?.point??0))*10000)/10000;return total;})]};})};
 }
+
+export function rankProgress(state:State){
+ const games=orderedGames(state);
+ return {games,series:state.players.filter(p=>games.some(g=>g.rows.some(r=>r.playerId===p.id))).map(player=>({...player,values:games.map(g=>g.rows.find(r=>r.playerId===player.id)?.rank??null)}))};
+}
