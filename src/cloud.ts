@@ -43,7 +43,7 @@ export function useCloud(onState:(state:State)=>void){
   if(!client||!session||!ref.current||ref.current.id!==roomId)throw Error('NOT_CONNECTED');
   if(expectedVersion!==undefined&&expectedVersion!==ref.current.version){const latest=await refresh();if(latest)apply(latest);throw Error('VERSION_CONFLICT');}
   if(busy.current)throw Error('SAVING');busy.current=true;setSaving(true);const current=ref.current;const gen=generation.current;
-  try{const {data,error}=await client.rpc('jr_save_room',{target:current.id,expected_version:current.version,next_state:next});if(error){if(error.message.includes('VERSION_CONFLICT')){const latest=await refresh();if(latest&&gen===generation.current)apply(latest);}throw error;}if(gen===generation.current)apply(data as Room);setStatus('同期済み');}
+  try{const {data,error}=await client.rpc('jr_save_room',{target:current.id,expected_version:current.version,next_state:next}).single<Room>();if(error){if(error.message.includes('VERSION_CONFLICT')){const latest=await refresh();if(latest&&gen===generation.current)apply(latest);}throw error;}if(gen===generation.current)apply(data as Room);setStatus('同期済み');}
   finally{busy.current=false;setSaving(false);}
  }
  function selectRoom(id:string|null){if(busy.current)return;if(id)localStorage.setItem('janroku-cloud-room',id);else localStorage.removeItem('janroku-cloud-room');ref.current=null;setRoom(null);setRoomId(id);setMessage('');}
