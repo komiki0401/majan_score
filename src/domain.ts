@@ -43,3 +43,6 @@ export function rankProgress(state:State){
  const games=orderedGames(state);
  return {games,series:state.players.filter(p=>games.some(g=>g.rows.some(r=>r.playerId===p.id))).map(player=>({...player,values:games.map(g=>g.rows.find(r=>r.playerId===player.id)?.rank??null)}))};
 }
+
+/** Freeze legacy calendar dates before sending records to people in other time zones. */
+export function sharingState(state:State):State{return {...state,games:state.games.map(game=>({...game,playedOn:gameDay(game)}))};}
