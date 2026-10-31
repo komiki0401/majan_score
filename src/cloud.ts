@@ -9,7 +9,7 @@ export function validConfig(config:CloudConfig):boolean{
  try{return JSON.parse(atob(config.key.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))).role==='anon';}catch{return false;}
 }
 export function readConfig():CloudConfig|null{try{const c=JSON.parse(localStorage.getItem('janroku-cloud-config')??'null');return c&&validConfig(c)?c:null;}catch{return null;}}
-export function readInvitation():{config:CloudConfig;code:string}|null{try{const p=new URLSearchParams(location.hash.slice(1));const config={url:p.get('project')??'',key:p.get('key')??''};const code=p.get('join')??'';return validConfig(config)&&/^[a-f0-9]{64}$/.test(code)?{config,code}:null;}catch{return null;}}
+export function readInvitation():{config:CloudConfig;code:string}|null{try{const p=new URLSearchParams(location.hash.slice(1));const config={url:p.get('project')??'',key:p.get('key')??''};const code=p.get('join')??'';if(validConfig(config)&&/^[a-f0-9]{64}$/.test(code))return {config,code};const pending=JSON.parse(localStorage.getItem('janroku-pending-invite')??'null');return pending&&validConfig(pending.config)&&/^[a-f0-9]{64}$/.test(pending.code)?pending:null;}catch{return null;}}
 export function cloudMessage(error:unknown):string{
  const m=error instanceof Error?error.message:String((error as {message?:string})?.message??error);
  if(m.includes('VERSION_CONFLICT'))return 'ほかの端末で更新されました。最新の記録を読み直しました。入力内容を確認し、もう一度保存してください。';
