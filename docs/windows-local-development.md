@@ -1,5 +1,7 @@
 # Windows PCへの開発引き継ぎ
 
+> 運用更新：以後の機能追加・修正は、`AGENTS.md` に従い、`npm run verify` が成功したらcommit・mainへのpush・GitHub Pagesへの自動公開まで実施します。以下の引き継ぎ例にある「公開は指示を待つ」という旧運用は、この承認不要の公開方針に置き換わりました。Supabaseの本番データと `.env.local` は引き続き変更・削除・公開しません。
+
 ## 移行前に確認した状態
 
 - リポジトリ: https://github.com/komiki0401/majan_score

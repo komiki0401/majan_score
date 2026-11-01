@@ -22,6 +22,16 @@ beforeAll(async()=>{
 beforeEach(async()=>{await admin();await db.exec(`delete from public.jr_rooms where id<>'${legacyId}';update public.jr_rooms set is_public=false,deleted_at=null where id='${legacyId}';truncate public.jr_public_changes,public.jr_public_requests,public.jr_public_events,public.jr_public_rates;`);await anon();});
 afterAll(async()=>{await db.close();});
 describe('public sharing migration and protection',()=>{
+ it('enables RLS and denies direct writes and private helper execution for both client roles',async()=>{
+  await admin();
+  const tables=['jr_rooms','jr_public_events','jr_public_changes','jr_public_requests','jr_public_rates'];
+  const flags=await db.query<{relrowsecurity:boolean}>('select relrowsecurity from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname=\'public\' and c.relname=any($1::text[])',[tables]);
+  expect(flags.rows).toHaveLength(tables.length);expect(flags.rows.every(row=>row.relrowsecurity)).toBe(true);
+  for(const role of ['anon','authenticated']){
+   for(const table of tables){for(const privilege of ['INSERT','UPDATE','DELETE']){expect((await db.query<{allowed:boolean}>('select has_table_privilege($1,$2,$3) allowed',[role,'public.'+table,privilege])).rows[0].allowed).toBe(false);}}
+   for(const signature of ['public.jr_public_data(uuid)','public.jr_public_rate(text,text,integer)','public.jr_publish_existing(uuid)']){expect((await db.query<{allowed:boolean}>('select has_function_privilege($1,$2,\'EXECUTE\') allowed',[role,signature])).rows[0].allowed).toBe(false);}
+  }
+ });
  it('preserves legacy records and keeps them private until explicitly published',async()=>{
   expect(await call('jr_public_list',[true])).toEqual([]);expect(await call('jr_public_room',[legacyId])).toEqual({error:'NOT_FOUND'});
   await expect(db.query('select * from public.jr_rooms')).rejects.toThrow();await expect(db.query('select * from public.jr_audit')).rejects.toThrow();await expect(call('jr_publish_existing',[legacyId])).rejects.toThrow();
