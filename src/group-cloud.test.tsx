@@ -6,7 +6,10 @@ import {createClient} from '@supabase/supabase-js';
 import {useCloud,type CloudConnection} from './cloud';
 import {emptyState} from './domain';
 import {useAllTournamentScores} from './useAllTournamentScores';
+import {prepareGroupTournament} from './group-initial-tournament';
+import {tournamentName} from './tournament-name';
 vi.mock('@supabase/supabase-js',()=>({createClient:vi.fn()}));
+vi.mock('./group-initial-tournament',()=>({prepareGroupTournament:vi.fn(async()=>{})}));
 let root:Root,host:HTMLDivElement,cloud:CloudConnection,rpc:ReturnType<typeof vi.fn>,from:ReturnType<typeof vi.fn>,channel:ReturnType<typeof vi.fn>,assign:ReturnType<typeof vi.fn>;
 const token='a'.repeat(64),id='11111111-1111-4111-8111-111111111111',onState=vi.fn();
 beforeEach(()=>{
@@ -20,6 +23,20 @@ beforeEach(()=>{
 });
 afterEach(async()=>{await act(async()=>root.unmount());host.remove();vi.unstubAllGlobals();vi.clearAllMocks();});
 async function mount(){function Example(){cloud=useCloud(onState);return null;}await act(async()=>root.render(<Example/>));}
+it('initializes the date name only for a newly issued group URL and never reapplies it after success',async()=>{await mount();await cloud.createGroup('新しい仲間');expect(prepareGroupTournament).toHaveBeenCalledTimes(1);expect(vi.mocked(prepareGroupTournament).mock.calls[0][4]).toMatch(/^\d{4}\/\d{2}\/\d{2}（[日月火水木金土]）麻雀会$/);await cloud.createGroup('新しい仲間');expect(prepareGroupTournament).toHaveBeenCalledTimes(1);});
+it('reuses the same automatically named creation after an uncertain response instead of creating another suffix',async()=>{
+ await mount();const base=tournamentName('2026-11-01'),newId='22222222-2222-4222-8222-222222222222';let attempts=0;
+ rpc.mockImplementation(async(name:string,args?:{initial_state?:typeof emptyState})=>{
+  if(name==='jr_group_index')return {data:[{room_id:id,version:2,updated_at:'date'}],error:null};
+  if(name==='jr_group_room')return {data:{id,state:{...structuredClone(emptyState),name:base},version:2,updated_at:'date',deleted_at:null},error:null};
+  if(name==='jr_group_tournament_create'){attempts++;return attempts===1?{data:null,error:{message:'offline'}}:{data:{id:newId,state:args!.initial_state,version:1,updated_at:'date',deleted_at:null},error:null};}
+  return {data:[],error:null};
+ });
+ await act(async()=>{await expect(cloud.createRoom({...structuredClone(emptyState),name:base},'2026-11-01')).rejects.toThrow();});
+ await act(async()=>{await cloud.createRoom({...structuredClone(emptyState),name:base+'③'},'2026-11-01');});
+ const calls=rpc.mock.calls.filter(([name])=>name==='jr_group_tournament_create') as unknown as [string,{request_id:string;initial_state:typeof emptyState}][];
+ expect(calls[0][1].initial_state.name).toBe(base+'②');expect(calls[1][1].initial_state.name).toBe(base+'②');expect(calls[1][1].request_id).toBe(calls[0][1].request_id);
+});
 it('uses scoped headers and APIs, never public history or Realtime, and preserves the capability in shared URLs',async()=>{await mount();expect(vi.mocked(createClient).mock.calls.at(-1)?.[2]?.global?.headers).toEqual({'x-janroku-group':token});expect(cloud.groupMode).toBe(true);expect(cloud.groupName).toBe('仲間の雀録');expect(cloud.room?.state.name).toBe('仲間の大会');expect(from).not.toHaveBeenCalled();expect(channel).not.toHaveBeenCalled();expect(rpc.mock.calls.every(([name])=>name.startsWith('jr_group_'))).toBe(true);expect(new URLSearchParams(new URL(cloud.shareURL()).hash.slice(1)).get('group')).toBe(token);});
 it('never constructs a client for an invalid capability',async()=>{location.hash='#group=bad';await mount();expect(createClient).not.toHaveBeenCalled();expect(cloud.client).toBeNull();expect(cloud.groupError).toBeTruthy();});
 it('keeps a failed creation retry idempotent and returns the URL only after confirmed creation',async()=>{await mount();rpc.mockImplementation(async(name:string)=>name==='jr_group_create'?{data:null,error:{message:'offline'}}:{data:{},error:null});await expect(cloud.createGroup('新しい仲間')).rejects.toThrow();const first=rpc.mock.calls.find(([name])=>name==='jr_group_create') as unknown as [string,{request_id:string;access_token:string}];expect(assign).not.toHaveBeenCalled();rpc.mockImplementation(async()=>({data:{room_id:id},error:null}));const url=await cloud.createGroup('新しい仲間');const last=rpc.mock.calls.at(-1) as unknown as [string,{request_id:string;access_token:string}];expect(last[1].request_id).toBe(first[1].request_id);expect(last[1].access_token).toBe(first[1].access_token);expect(url).toContain('#group='+first[1].access_token);expect(assign).not.toHaveBeenCalled();});

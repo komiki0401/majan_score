@@ -6,6 +6,7 @@ import {createClient} from '@supabase/supabase-js';
 import App from './App';
 import {freshSample,loadSample,saveSample,SAMPLE_KEY} from './sample';
 import {Landing} from './Landing';
+import {tournamentName} from './tournament-name';
 vi.mock('@supabase/supabase-js',()=>({createClient:vi.fn(()=>{throw Error('Sample must never create a Supabase client');})}));
 let host:HTMLDivElement,root:Root;
 beforeEach(()=>{(globalThis as {IS_REACT_ACT_ENVIRONMENT?:boolean}).IS_REACT_ACT_ENVIRONMENT=true;vi.stubGlobal('ResizeObserver',class{observe(){}disconnect(){}unobserve(){}});localStorage.clear();location.hash='#sample';host=document.createElement('div');document.body.append(host);root=createRoot(host);});
@@ -40,6 +41,27 @@ it('creates a sample tournament in local storage and reloads the selected tourna
  await input(host.querySelector('[aria-label="新しい大会名"]')!,'おためし大会');await click(button('大会を作成'));
  const saved=loadSample();expect(saved.rooms).toHaveLength(3);expect(saved.rooms.find(r=>r.id===saved.selected)?.state.name).toBe('おためし大会');expect(host.querySelector('.score-tournament strong')?.textContent).toBe('おためし大会');
  expect(localStorage.getItem('janroku-v1')).toBeNull();expect(createClient).not.toHaveBeenCalled();
+});
+it('updates a new tournament name with its date, preserves manual edits and carries the date into score entry',async()=>{
+ await act(async()=>root.render(<App sample/>));await click(button('大会管理'));await click(host.querySelector('.tournament-list-disclosure summary')!);
+ const date=host.querySelector<HTMLInputElement>('[aria-label="新しい大会の対局日"]')!,name=host.querySelector<HTMLInputElement>('[aria-label="新しい大会名"]')!;
+ await input(date,'2026-11-01');expect(name.value).toBe('2026/11/01（日）麻雀会');await input(date,'2026-11-02');expect(name.value).toBe('2026/11/02（月）麻雀会');
+ await input(name,'仲間の大会');await input(date,'2026-11-03');expect(name.value).toBe('仲間の大会');await click(button('大会を作成'));
+ expect(host.querySelector<HTMLInputElement>('[aria-label="対局日"]')?.value).toBe('2026-11-03');expect(host.querySelector<HTMLInputElement>('[aria-label="スコア入力の大会名"]')?.value).toBe('仲間の大会');
+ await input(host.querySelector('[aria-label="対局日"]')!,'2026-11-04');expect(host.querySelector<HTMLInputElement>('[aria-label="スコア入力の大会名"]')?.value).toBe('仲間の大会');
+});
+it('auto-names a new empty tournament in score entry until manually edited, without changing stored names before save',async()=>{
+ await act(async()=>root.render(<App sample/>));await click(button('大会管理'));await click(host.querySelector('.tournament-list-disclosure summary')!);await input(host.querySelector('[aria-label="新しい大会の対局日"]')!,'2026-11-01');await click(button('大会を作成'));
+ await input(host.querySelector('[aria-label="対局日"]')!,'2026-11-02');expect(host.querySelector<HTMLInputElement>('[aria-label="スコア入力の大会名"]')?.value).toBe('2026/11/02（月）麻雀会');
+ const saved=loadSample();expect(saved.rooms.find(r=>r.id===saved.selected)?.state.name).toBe('2026/11/01（日）麻雀会');
+ await input(host.querySelector('[aria-label="スコア入力の大会名"]')!,'手動の名前');await input(host.querySelector('[aria-label="対局日"]')!,'2026-11-03');expect(host.querySelector<HTMLInputElement>('[aria-label="スコア入力の大会名"]')?.value).toBe('手動の名前');
+});
+it('preserves existing tournament names on date changes and saves an explicit name edit with the score',async()=>{
+ await act(async()=>root.render(<App sample/>));await click(button('スコア入力＋'));await input(host.querySelector('[aria-label="対局日"]')!,'2026-11-02');expect(host.querySelector<HTMLInputElement>('[aria-label="スコア入力の大会名"]')?.value).toBe('週末のなかよし卓');
+ await input(host.querySelector('[aria-label="スコア入力の大会名"]')!,'手動で編集した大会');await click(button('計算結果を確認'));expect(host.querySelector('.confirm-tournament strong')?.textContent).toBe('手動で編集した大会');await click(button('この結果を保存'));expect(loadSample().rooms[0].state.name).toBe('手動で編集した大会');
+});
+it('uses a circled suffix when another tournament on the same day is created',async()=>{
+ const store=freshSample();store.rooms[0].state.name=tournamentName('2026-11-01');saveSample(store);await act(async()=>root.render(<App sample/>));await click(button('大会管理'));await click(host.querySelector('.tournament-list-disclosure summary')!);await input(host.querySelector('[aria-label="新しい大会の対局日"]')!,'2026-11-01');expect(host.querySelector<HTMLInputElement>('[aria-label="新しい大会名"]')?.value).toBe('2026/11/01（日）麻雀会②');await click(button('大会を作成'));expect(loadSample().rooms.at(-1)?.state.name).toBe('2026/11/01（日）麻雀会②');expect(loadSample().rooms[0].state.name).toBe(store.rooms[0].state.name);
 });
 it('initializes fictional data without writing storage and rejects damaged data rather than overwriting it',()=>{
  const sample=freshSample();expect(sample.rooms.flatMap(r=>r.state.games)).toHaveLength(12);expect(localStorage.getItem(SAMPLE_KEY)).toBeNull();

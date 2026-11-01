@@ -1,3 +1,4 @@
+import {tournamentName} from './tournament-name';
 import {useEffect,useMemo,useRef,useState} from 'react';
 import type {CloudChange,CloudConnection,Room} from './cloud';
 import {freshSample,loadSample,saveSample,type SampleStore} from './sample';
@@ -24,7 +25,7 @@ export function useSampleCloud(onState:(state:State)=>void,enabled:boolean):Clou
  return {groupMode:true,groupName:'サンプルの雀録',groupError:'',groupAvailable:false,createGroup:async()=>{throw Error('トップページから本物のグループを作成してください。');},config:{url:'',key:''},client:enabled?client:null,roomId:room.id,room,rooms:store.rooms.map(r=>({id:r.id,name:r.state.name,players:r.state.players.length,games:r.state.games.length,version:r.version,updated_at:r.updated_at,deleted_at:r.deleted_at})),changes,status:'サンプル・ブラウザ内保存',message,setMessage,saving:false,loading:false,active:true,
   configure:()=>{throw Error('Sample cannot connect to Supabase');},selectRoom:id=>{if(id&&current.current.rooms.some(r=>r.id===id))commit({...current.current,selected:id});},
   saveRemote:async next=>{if(initial.error)throw Error(initial.error);await update(current.current.selected,next);},renameRoom:async(id,name)=>{const r=current.current.rooms.find(r=>r.id===id)!;await update(id,{...r.state,name:name.trim()});},
-  createRoom:async(state:State)=>{const next:Room={id:crypto.randomUUID(),state,version:1,updated_at:new Date().toISOString(),deleted_at:null};commit({...current.current,selected:next.id,rooms:[...current.current.rooms,next]});return next;},
+  createRoom:async(state:State,autoNameDay?:string)=>{if(autoNameDay)state={...state,name:tournamentName(autoNameDay,current.current.rooms.map(room=>room.state.name))};const next:Room={id:crypto.randomUUID(),state,version:1,updated_at:new Date().toISOString(),deleted_at:null};commit({...current.current,rooms:[...current.current.rooms,next]});return next;},
   shareURL:()=>location.origin+location.pathname+'#sample',reloadRooms:async()=>store.rooms.map(r=>({id:r.id,name:r.state.name,players:r.state.players.length,games:r.state.games.length,version:r.version,updated_at:r.updated_at,deleted_at:r.deleted_at})),reloadChanges:async()=>changes,latest:()=>current.current.rooms.find(r=>r.id===current.current.selected)!,
   restore:async id=>{const item=logs.current.get(id);if(!item)throw Error('NOT_FOUND');return update(item.before.id,item.before.state,item.before.deleted_at);},archive:async item=>{const r=current.current.rooms.find(r=>r.id===item.id)!;return update(r.id,r.state,new Date().toISOString());},restoreRoom:async id=>{const r=current.current.rooms.find(r=>r.id===id)!;return update(id,r.state,null);}
  };
