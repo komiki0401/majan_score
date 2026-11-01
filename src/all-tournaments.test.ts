@@ -1,0 +1,26 @@
+import {describe,it,expect,vi} from 'vitest';
+import {allTournamentState,loadTournamentScores,loadTournamentIndex} from './all-tournaments';
+import {calculate,defaultRules,emptyState,forDay,standings,rankProgress,type State} from './domain';
+import {type Room,type RoomSummary} from './cloud';
+const makeRoom=(id:string,day:string,names:string[],scores:number[]):Room=>({id,version:1,updated_at:'2026-11-01T00:00:00Z',deleted_at:null,state:{...structuredClone(emptyState),name:id,players:names.map((name,i)=>({id:`${id}-${i}`,name})),games:[{id:'copied-game-id',table:'1',date:day+'T03:00:00Z',playedOn:day,rules:structuredClone(defaultRules),revisions:[],rows:calculate(scores.map((score,i)=>({playerId:`${id}-${i}`,score})),defaultRules)}]}});
+const summary=(r:Room):RoomSummary=>({id:r.id,name:r.state.name,version:r.version,updated_at:r.updated_at,deleted_at:r.deleted_at,players:r.state.players.length,games:r.state.games.length});
+const a=makeRoom('大会A','2026-05-05',['田中','佐藤','鈴木','高橋'],[40000,30000,20000,10000]);
+const b=makeRoom('大会B','2026-06-07',['佐藤','田中','伊藤','山本'],[50000,20000,20000,10000]);
+describe('all-tournament dashboard data',()=>{
+ it('combines people by name across distinct tournament IDs and keeps every game',()=>{const original=structuredClone([a,b]);const data=allTournamentState([a,b]);const ranked=standings(data).filter(p=>p.count);expect(ranked).toHaveLength(6);expect(ranked[0].name).toBe('佐藤');expect(ranked[0].total).toBe(70);expect(ranked[0].count).toBe(2);expect(ranked.find(p=>p.name==='田中')?.total).toBe(40);expect(data.games).toHaveLength(2);expect(new Set(data.games.map(g=>g.id)).size).toBe(2);expect([a,b]).toEqual(original);});
+ it('applies all-period and day filtering to combined points, statistics and rank graphs',()=>{const data=allTournamentState([a,b]);expect(forDay(data,'all').games).toHaveLength(2);expect(standings(forDay(data,'2026-05-05')).find(p=>p.name==='佐藤')?.total).toBe(10);expect(standings(forDay(data,'2026-06-07')).find(p=>p.name==='佐藤')?.total).toBe(60);expect(rankProgress(data).series.find(p=>p.name==='佐藤')?.values).toEqual([2,1]);expect(rankProgress(forDay(data,'2026-05-05')).games).toHaveLength(1);});
+ it('excludes archived tournaments without changing source records or recomputing stored points',()=>{const manual={...b,state:{...b.state,games:b.state.games.map(g=>({...g,rows:g.rows.map(r=>({...r,point:1.2345}))}))}};const data=allTournamentState([a,manual,{...b,id:'deleted',deleted_at:'2026-11-01T00:00:00Z'}]);expect(data.games).toHaveLength(2);expect(standings(data).find(p=>p.name==='佐藤')?.total).toBe(11.2345);expect(data.players.some(p=>p.name==='伊藤')).toBe(true);});
+ it('keeps graph order and tied ranking stable when catalog update order changes',()=>{expect(allTournamentState([a,b])).toEqual(allTournamentState([b,a]));});
+ it('uses all listed active tournaments, including registered players with no results',()=>{const empty={...a,id:'empty',state:{...a.state,players:[{id:'waiting',name:'未対局'}],games:[]}};const data=allTournamentState([empty]);expect(data.players[0].name).toBe('未対局');expect(standings(data)[0].count).toBe(0);expect(data.games).toEqual([]);});
+});
+describe('complete, versioned tournament loading',()=>{
+ it('fetches all active tournament states, skips archived rooms and reuses unchanged versions',async()=>{let bVersion=1;const fetch=vi.fn(async(id:string)=>id===a.id?a:{...b,version:bVersion});const cache=new Map();const result=await loadTournamentScores([summary(a),summary(b),{...summary(a),id:'archived',deleted_at:'date'}],fetch,cache,null);expect(result).toHaveLength(2);expect(fetch).toHaveBeenCalledTimes(2);await loadTournamentScores([summary(a),summary(b)],fetch,cache,null);expect(fetch).toHaveBeenCalledTimes(2);const updated={...summary(b),version:2};bVersion=2;await loadTournamentScores([summary(a),updated],fetch,cache,null);expect(fetch).toHaveBeenCalledTimes(3);});
+ it('uses the selected tournament latest state for immediate ranking updates',async()=>{const fetch=vi.fn(async()=>a);const result=await loadTournamentScores([summary(a)],fetch,new Map(),{...a,version:2});expect(fetch).not.toHaveBeenCalled();expect(result[0].version).toBe(2);});
+ it('fails the entire refresh instead of returning an incomplete ranking',async()=>{const fetch=vi.fn(async(id:string)=>{if(id===b.id)throw Error('offline');return a;});await expect(loadTournamentScores([summary(a),summary(b)],fetch,new Map(),null)).rejects.toThrow('offline');});
+});
+
+
+describe('full public tournament index',()=>{
+ it('reads beyond the catalog limit and beyond one API page',async()=>{const rows=Array.from({length:1001},(_,i)=>({room_id:String(i),version:1,updated_at:'now'}));const read=vi.fn(async(offset:number,size:number)=>rows.slice(offset,offset+size));const index=await loadTournamentIndex(read);expect(index).toHaveLength(1001);expect(index[1000].id).toBe('1000');expect(read).toHaveBeenCalledTimes(3);});
+ it('never treats a failed page as a complete tournament list',async()=>{const read=vi.fn(async(offset:number)=>{if(offset)throw Error('offline');return Array.from({length:500},(_,i)=>({room_id:String(i),version:1,updated_at:'now'}));});await expect(loadTournamentIndex(read)).rejects.toThrow('offline');});
+});
