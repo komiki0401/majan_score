@@ -3,7 +3,7 @@ import {allTournamentState,recentTournament,loadTournamentIndex,loadTournamentSc
 import {cloudMessage,type CloudConnection,type Room} from './cloud';
 import {type State} from './domain';
 export function useAllTournamentScores(cloud:CloudConnection,enabled:boolean){
- const [result,setResult]=useState<{project:unknown;state:State|null;count:number;recent:Room|null}>({project:null,state:null,count:0,recent:null});
+ const [result,setResult]=useState<{project:unknown;state:State|null;count:number;recent:Room|null;rooms:{id:string;name:string;deleted_at:string|null}[]}>({project:null,state:null,count:0,recent:null,rooms:[]});
  const [loading,setLoading]=useState(false),[error,setError]=useState(''),[retry,setRetry]=useState(0);
  const cache=useMemo(()=>new Map<string,CachedTournament>(),[cloud.client]);
  const latest=useRef(cloud);latest.current=cloud;
@@ -16,7 +16,7 @@ export function useAllTournamentScores(cloud:CloudConnection,enabled:boolean){
    const {data,error}=await project.from('jr_public_events').select('room_id,version,updated_at').order('room_id',{ascending:true}).range(offset,offset+size-1);if(error)throw error;return data??[];
   }).then(index=>loadTournamentScores(index,async id=>{
    const {data,error}=await project.rpc('jr_public_room',{target:id});if(error)throw error;if(!data||data.error)throw Error(data?.error??'NOT_FOUND');return data;
-  },cache,snapshot.room)).then(rooms=>{if(alive)setResult({project,state:allTournamentState(rooms),count:rooms.filter(room=>!room.deleted_at).length,recent:recentTournament(rooms)});}).catch(e=>{if(alive)setError(cloudMessage(e));}).finally(()=>{if(alive)setLoading(false);});
+  },cache,snapshot.room)).then(rooms=>{if(alive)setResult({project,state:allTournamentState(rooms),count:rooms.filter(room=>!room.deleted_at).length,recent:recentTournament(rooms),rooms:rooms.map(room=>({id:room.id,name:room.state.name,deleted_at:room.deleted_at}))});}).catch(e=>{if(alive)setError(cloudMessage(e));}).finally(()=>{if(alive)setLoading(false);});
   return ()=>{alive=false;};
  },[enabled,cloud.client,current,cache,retry]);
  useEffect(()=>{
@@ -27,5 +27,5 @@ export function useAllTournamentScores(cloud:CloudConnection,enabled:boolean){
   document.addEventListener('visibilitychange',visible);window.addEventListener('online',visible);
   return()=>{clearInterval(timer);document.removeEventListener('visibilitychange',visible);window.removeEventListener('online',visible);void project.removeChannel(channel);};
  },[enabled,cloud.client]);
- return {recent:result.project===cloud.client?result.recent:null,state:result.project===cloud.client?result.state:null,count:result.project===cloud.client?result.count:0,loading,error,reload:useCallback(()=>setRetry(x=>x+1),[])};
+ return {rooms:result.project===cloud.client?result.rooms:[],recent:result.project===cloud.client?result.recent:null,state:result.project===cloud.client?result.state:null,count:result.project===cloud.client?result.count:0,loading,error,reload:useCallback(()=>setRetry(x=>x+1),[])};
 }

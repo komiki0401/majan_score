@@ -22,3 +22,5 @@
 .ranking-scope-tabs{display:flex;gap:6px;padding:5px;background:var(--bg);border:1px solid var(--border);border-radius:12px;margin:0 0 16px}.ranking-scope-tabs button{flex:1;border:0;border-radius:8px;padding:13px 8px;background:transparent;color:inherit;font:inherit;font-weight:700;cursor:pointer}.ranking-scope-tabs button[aria-selected="true"]{background:#285f50;color:#fff}
 
 .previous-players{margin:20px 0}.previous-players p{margin-top:10px}.live-commentary>.text-button{flex-shrink:0;font-size:11px}
+
+.history-source{padding:18px;margin-bottom:16px}.history-source label{display:flex;flex-direction:column;gap:8px;font-weight:700}.history-source p{margin-top:12px}
