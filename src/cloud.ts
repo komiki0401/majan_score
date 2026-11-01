@@ -36,30 +36,30 @@ export function cloudMessage(error:unknown):string{
  return 'クラウドへの保存を確認できませんでした。接続を確認して同じ内容で再保存してください。再送による重複を防止します。';
 }
 function unwrap<T>(data:T&{error?:string}|null,error:{message:string}|null):T{if(error)throw Error(error.message);if(!data)throw Error('NOT_FOUND');if(data.error)throw Error(data.error);return data;}
-export function useCloud(onState:(state:State)=>void){
+export function useCloud(onState:(state:State)=>void,enabled=true,workspace=true){
  const [{mode:groupMode,token:groupToken}]=useState(groupAccess);
  const [groupAvailable,setGroupAvailable]=useState<boolean|null>(null),[groupName,setGroupName]=useState(''),[groupError,setGroupError]=useState('');
  const pendingGroup=useRef<{id:string;token:string;name:string}|null>(null);
- const [config,setConfig]=useState<CloudConfig|null>(readConfig);
+ const [config,setConfig]=useState<CloudConfig|null>(()=>enabled?readConfig():null);
  // No sign-in, anonymous Auth account, session persistence, or Auth network requests.
- const client=useMemo(()=>config&&(!groupMode||groupToken)?createClient(config.url,config.key,{global:{headers:groupToken?{'x-janroku-group':groupToken}:{}},auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},realtime:{params:{eventsPerSecond:10}}}):null,[config,groupToken,groupMode]);
+ const client=useMemo(()=>enabled&&config&&(!groupMode||groupToken)?createClient(config.url,config.key,{global:{headers:groupToken?{'x-janroku-group':groupToken}:{}},auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},realtime:{params:{eventsPerSecond:10}}}):null,[config,groupToken,groupMode,enabled]);
  const reader=useMemo(()=>client?cloudReader(client,groupMode):null,[client,groupMode]);
  const [roomId,setRoomId]=useState<string|null>(linkedRoom),[room,setRoom]=useState<Room|null>(null),[rooms,setRooms]=useState<RoomSummary[]>([]),[changes,setChanges]=useState<CloudChange[]>([]);
  const [status,setStatus]=useState('未接続'),[message,setMessage]=useState(''),[saving,setSaving]=useState(false),[loading,setLoading]=useState(false);
- const ref=useRef<Room|null>(null),target=useRef(roomId),busy=useRef(false),generation=useRef(0),device=useRef(deviceId());target.current=roomId;
+ const ref=useRef<Room|null>(null),target=useRef(roomId),busy=useRef(false),generation=useRef(0),device=useRef(enabled?deviceId():'');target.current=roomId;
  const apply=useCallback((data:Room)=>{if(data.id!==target.current||ref.current&&ref.current.id===data.id&&ref.current.version>=data.version)return;ref.current=data;setRoom(data);onState(data.state);},[onState]);
  const reloadRooms=useCallback(async()=>{if(!client)return;const {data,error}=await client.rpc(groupRPC('jr_public_list',groupMode),{include_archived:true});const list=unwrap<RoomSummary[]>(data,error);setRooms(list);if(groupMode&&!target.current){const first=list.find(room=>!room.deleted_at);if(first)setRoomId(first.id);}return list;},[client,groupMode]);
  const fetchRoom=useCallback(async(id:string)=>{if(!reader)throw Error('NOT_CONNECTED');return reader.room(id,undefined,true);},[reader]);
  const reloadChanges=useCallback(async(id=target.current)=>{if(!client||!id)return [];const {data,error}=groupMode?await client.rpc('jr_group_changes',{target:id}):await client.from('jr_public_changes').select('id,room_id,version,kind,entity_id,before_data,after_data,created_at,restored_from').eq('room_id',id).order('version',{ascending:false}).order('created_at',{ascending:false}).limit(100);if(error)throw error;const list=(data??[]) as CloudChange[];if(id===target.current)setChanges(list);return list;},[client]);
- useEffect(()=>{if(!client||!reader){setRooms([]);setLoading(false);return;}let alive=true,last:unknown;setLoading(true);
+ useEffect(()=>{if(!workspace||!client||!reader){setRooms([]);setLoading(false);return;}let alive=true,last:unknown;setLoading(true);
  const control=visibleSync(async fresh=>{try{if(fresh)reader.invalidate();const index=await reader.index();if(index!==last){await reloadRooms();last=index;}}catch(e){if(alive)setMessage(cloudMessage(e));}finally{if(alive)setLoading(false);}});
  const channel=groupMode?null:client.channel('jr-public-catalog').on('postgres_changes',{event:'*',schema:'public',table:'jr_public_events'},()=>{reader.invalidate();void control.run();}).subscribe();
- return()=>{alive=false;control.stop();if(channel)void client.removeChannel(channel);};},[client,reader,reloadRooms,groupMode]);
- useEffect(()=>{generation.current++;ref.current=null;setRoom(null);setChanges([]);if(!client||!reader||!roomId){setStatus(client?'大会を選択':'未接続');return;}let alive=true,realtime=false,historyVersion=-1;setStatus('接続中');
+ return()=>{alive=false;control.stop();if(channel)void client.removeChannel(channel);};},[client,reader,reloadRooms,groupMode,workspace]);
+ useEffect(()=>{generation.current++;ref.current=null;setRoom(null);setChanges([]);if(!workspace||!client||!reader||!roomId){setStatus(client?'大会を選択':'未接続');return;}let alive=true,realtime=false,historyVersion=-1;setStatus('接続中');
  const control=visibleSync(async fresh=>{try{if(fresh)reader.invalidate();const index=await reader.index();const version=index.find(row=>row.id===roomId)?.version;const data=await reader.room(roomId,version);if(alive){apply(data);setStatus(realtime?'リアルタイム接続':'同期済み');if(historyVersion!==data.version){await reloadChanges(roomId);historyVersion=data.version;}}}catch(e){if(alive){setStatus('接続エラー');setMessage(cloudMessage(e));}}});
  const channel=groupMode?null:client.channel('jr-public-'+roomId).on('postgres_changes',{event:'*',schema:'public',table:'jr_public_events',filter:'room_id=eq.'+roomId},()=>{reader.invalidate();void control.run();}).subscribe(s=>{if(!alive)return;if(s==='SUBSCRIBED'){realtime=true;reader.invalidate();void control.run();}else if(s==='CHANNEL_ERROR'||s==='TIMED_OUT'||s==='CLOSED'){realtime=false;setStatus('再接続中・定期取得');}});
  return()=>{alive=false;control.stop();if(channel)void client.removeChannel(channel);};
- },[client,reader,roomId,apply,reloadChanges,groupMode]);
+ },[client,reader,roomId,apply,reloadChanges,groupMode,workspace]);
  useEffect(()=>{let alive=true;if(!client){setGroupAvailable(false);if(groupMode)setGroupError('このグループのURLを確認してください。');return;}void client.rpc('jr_group_status',{}, {get:true}).then(({data,error})=>{if(alive)setGroupAvailable(!error&&data?.version===1);});if(groupMode)void client.rpc('jr_group_info',{}, {get:true}).then(({data,error})=>{if(!alive)return;if(error||!data?.name){setGroupError('グループを開けませんでした。共有されたURLと接続を確認してください。');return;}setGroupName(data.name);setGroupError('');});return()=>{alive=false;};},[client,groupMode]);
  function privateGroupURL(token:string,id?:string){const custom=config&&(config.url!==import.meta.env.VITE_SUPABASE_URL||config.key!==import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY)?config:undefined;return groupShareURL(token,id,custom);}
  async function createGroup(name:string){

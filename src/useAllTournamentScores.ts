@@ -10,7 +10,7 @@ export function useAllTournamentScores(cloud:CloudConnection,enabled:boolean){
  const cache=useMemo(()=>new Map<string,CachedTournament>(),[cloud.client]);
  const signature=useRef(''),resultProject=useRef<unknown>(null);
  const latest=useRef(cloud);latest.current=cloud;
- const current=cloud.room?`${cloud.room.id}:${cloud.room.version}:${cloud.room.deleted_at??''}`:'';
+ const current=(cloud.room?`${cloud.room.id}:${cloud.room.version}:${cloud.room.deleted_at??''}`:'')+JSON.stringify(cloud.rooms.map(room=>[room.id,room.version,room.deleted_at]));
  useEffect(()=>{
   if(!enabled||!cloud.client)return;
   let alive=true;const project=cloud.client;if(resultProject.current!==project){signature.current='';resultProject.current=project;setLoading(true);}

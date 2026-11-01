@@ -12,3 +12,8 @@ export function groupRPC(name:string,groupMode:boolean):string{
  if(name==='jr_public_create')return 'jr_group_tournament_create';
  return name.replace(/^jr_public_/,'jr_group_');
 }
+export function entryRoute(hash:string):'landing'|'sample'|'workspace'{
+ if(hash==='#sample')return 'sample';
+ const params=new URLSearchParams(hash.replace(/^#/,''));
+ return params.has('group')||params.has('room')||params.has('project')||hash==='#legacy'?'workspace':'landing';
+}

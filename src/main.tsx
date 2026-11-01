@@ -1,14 +1,19 @@
 import React from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App';
-import {groupAccess} from './group-sharing';
+import {Landing} from './Landing';
+import {groupAccess,entryRoute} from './group-sharing';
 
 function ScopedApp(){
  const [hash,setHash]=React.useState(location.hash);
  React.useEffect(()=>{const changed=()=>setHash(location.hash);window.addEventListener('hashchange',changed);return()=>window.removeEventListener('hashchange',changed);},[]);
+ React.useEffect(()=>{window.scrollTo({top:0,behavior:'instant'});},[hash]);
  const group=groupAccess(hash);
  // A new URL scope gets a fresh React tree: no previous group's caches or drafts survive.
- return <App key={group.mode?hash:'legacy'}/>;
+ const route=entryRoute(hash);
+ if(route==='sample')return <App key="sample" sample/>;
+ if(route==='workspace')return <App key={group.mode?hash:'legacy'}/>;
+ return <Landing/>;
 }
 
 createRoot(document.getElementById('root')!).render(<React.StrictMode><ScopedApp/></React.StrictMode>);
