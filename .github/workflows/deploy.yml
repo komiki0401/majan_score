@@ -23,6 +23,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Check generated group SQL (no database writes)
+        run: node scripts/generate-group-sql.mjs --check
       - run: npm test
       - run: npm run typecheck
       - run: npm run build

@@ -10,7 +10,8 @@
     "preview": "vite preview --host 0.0.0.0",
     "typecheck": "tsc --noEmit",
     "release:check": "node scripts/release-check.mjs",
-    "verify": "npm test && npm run typecheck && npm run build && npm run release:check"
+    "verify": "node scripts/generate-group-sql.mjs --check && npm test && npm run typecheck && npm run build && npm run release:check",
+    "groups:sql": "node scripts/generate-group-sql.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",

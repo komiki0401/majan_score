@@ -5,7 +5,7 @@ import {cloudMessage,type CloudConnection} from './cloud';
 export function Rooms({cloud,onOpen,onSettings,onLocal}:{cloud:CloudConnection;onOpen:(id:string)=>void;onSettings:()=>void;onLocal:()=>void}){
  const [name,setName]=useState(''),[showArchived,setShowArchived]=useState(false),[notice,setNotice]=useState(''),[working,setWorking]=useState(false);
  const [renaming,setRenaming]=useState<string|null>(null),[rename,setRename]=useState('');
- const [local]=useState<State|null>(()=>{try{return repository.load();}catch{return null;}});
+ const [local]=useState<State|null>(()=>{try{return cloud.groupMode?null:repository.load();}catch{return null;}});
  async function run(fn:()=>Promise<unknown>){if(working||cloud.saving)return;setWorking(true);setNotice('');try{await fn();}catch(e){setNotice(cloudMessage(e));}finally{setWorking(false);}}
  const list=cloud.rooms.filter(r=>showArchived||!r.deleted_at),disabled=working||cloud.saving;
  return <div className="rooms-view"><section className="rooms-intro"><div><span className="eyebrow">PLAY TOGETHER. RECORD TOGETHER.</span><h2>今日の卓を、みんなで。</h2><p>大会を選んで、すぐに点数入力。記録とランキングを全員で共有。</p></div><span className="pill">登録不要・リアルタイム共有</span></section>{(notice||cloud.message)&&<div className="cloud-message" role="status">{notice||cloud.message}</div>}

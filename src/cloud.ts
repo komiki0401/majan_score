@@ -1,4 +1,5 @@
 import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
+import {groupAccess,newGroupToken,groupShareURL,groupRPC} from './group-sharing';
 import {createClient} from '@supabase/supabase-js';
 import {type State,type Game,sharingState} from './domain';
 import {stateChanges,stableJSON,type PublicOperation} from './public-data';
@@ -34,30 +35,43 @@ export function cloudMessage(error:unknown):string{
 }
 function unwrap<T>(data:T&{error?:string}|null,error:{message:string}|null):T{if(error)throw Error(error.message);if(!data)throw Error('NOT_FOUND');if(data.error)throw Error(data.error);return data;}
 export function useCloud(onState:(state:State)=>void){
+ const [{mode:groupMode,token:groupToken}]=useState(groupAccess);
+ const [groupAvailable,setGroupAvailable]=useState<boolean|null>(null),[groupName,setGroupName]=useState(''),[groupError,setGroupError]=useState('');
  const [config,setConfig]=useState<CloudConfig|null>(readConfig);
  // No sign-in, anonymous Auth account, session persistence, or Auth network requests.
- const client=useMemo(()=>config?createClient(config.url,config.key,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},realtime:{params:{eventsPerSecond:10}}}):null,[config]);
+ const client=useMemo(()=>config&&(!groupMode||groupToken)?createClient(config.url,config.key,{global:{headers:groupToken?{'x-janroku-group':groupToken}:{}},auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},realtime:{params:{eventsPerSecond:10}}}):null,[config,groupToken,groupMode]);
  const [roomId,setRoomId]=useState<string|null>(linkedRoom),[room,setRoom]=useState<Room|null>(null),[rooms,setRooms]=useState<RoomSummary[]>([]),[changes,setChanges]=useState<CloudChange[]>([]);
  const [status,setStatus]=useState('未接続'),[message,setMessage]=useState(''),[saving,setSaving]=useState(false),[loading,setLoading]=useState(false);
  const ref=useRef<Room|null>(null),target=useRef(roomId),busy=useRef(false),generation=useRef(0),device=useRef(deviceId());target.current=roomId;
  const apply=useCallback((data:Room)=>{if(data.id!==target.current||ref.current&&ref.current.id===data.id&&ref.current.version>data.version)return;ref.current=data;setRoom(data);onState(data.state);},[onState]);
- const reloadRooms=useCallback(async()=>{if(!client)return;const {data,error}=await client.rpc('jr_public_list',{include_archived:true});const list=unwrap<RoomSummary[]>(data,error);setRooms(list);return list;},[client]);
- const fetchRoom=useCallback(async(id:string)=>{if(!client)throw Error('NOT_CONNECTED');const {data,error}=await client.rpc('jr_public_room',{target:id});return unwrap<Room>(data,error);},[client]);
- const reloadChanges=useCallback(async(id=target.current)=>{if(!client||!id)return [];const {data,error}=await client.from('jr_public_changes').select('id,room_id,version,kind,entity_id,before_data,after_data,created_at,restored_from').eq('room_id',id).order('version',{ascending:false}).order('created_at',{ascending:false}).limit(100);if(error)throw error;const list=(data??[]) as CloudChange[];if(id===target.current)setChanges(list);return list;},[client]);
- useEffect(()=>{if(!client){setRooms([]);setLoading(false);return;}let alive=true;setLoading(true);const load=()=>reloadRooms().catch(e=>{if(alive)setMessage(cloudMessage(e));}).finally(()=>{if(alive)setLoading(false);});void load();const channel=client.channel('jr-public-catalog').on('postgres_changes',{event:'*',schema:'public',table:'jr_public_events'},()=>void load()).subscribe();const timer=setInterval(()=>void load(),15000);return()=>{alive=false;clearInterval(timer);void client.removeChannel(channel);};},[client,reloadRooms]);
+ const reloadRooms=useCallback(async()=>{if(!client)return;const {data,error}=await client.rpc(groupRPC('jr_public_list',groupMode),{include_archived:true});const list=unwrap<RoomSummary[]>(data,error);setRooms(list);if(groupMode&&!target.current){const first=list.find(room=>!room.deleted_at);if(first)setRoomId(first.id);}return list;},[client,groupMode]);
+ const fetchRoom=useCallback(async(id:string)=>{if(!client)throw Error('NOT_CONNECTED');const {data,error}=await client.rpc(groupRPC('jr_public_room',groupMode),{target:id});return unwrap<Room>(data,error);},[client]);
+ const reloadChanges=useCallback(async(id=target.current)=>{if(!client||!id)return [];const {data,error}=groupMode?await client.rpc('jr_group_changes',{target:id}):await client.from('jr_public_changes').select('id,room_id,version,kind,entity_id,before_data,after_data,created_at,restored_from').eq('room_id',id).order('version',{ascending:false}).order('created_at',{ascending:false}).limit(100);if(error)throw error;const list=(data??[]) as CloudChange[];if(id===target.current)setChanges(list);return list;},[client]);
+ useEffect(()=>{if(!client){setRooms([]);setLoading(false);return;}let alive=true;setLoading(true);const load=()=>reloadRooms().catch(e=>{if(alive)setMessage(cloudMessage(e));}).finally(()=>{if(alive)setLoading(false);});void load();const channel=groupMode?null:client.channel('jr-public-catalog').on('postgres_changes',{event:'*',schema:'public',table:'jr_public_events'},()=>void load()).subscribe();const timer=setInterval(()=>void load(),15000);return()=>{alive=false;clearInterval(timer);if(channel)void client.removeChannel(channel);};},[client,reloadRooms,groupMode]);
  useEffect(()=>{generation.current++;ref.current=null;setRoom(null);setChanges([]);if(!client||!roomId){setStatus(client?'大会を選択':'未接続');return;}let alive=true,realtime=false;setStatus('接続中');
  const sync=async()=>{try{const data=await fetchRoom(roomId);if(alive){apply(data);setStatus(realtime?'リアルタイム接続':'同期済み');await reloadChanges(roomId);}}catch(e){if(alive){setStatus('接続エラー');setMessage(cloudMessage(e));}}};void sync();
- const channel=client.channel(`jr-public-${roomId}`).on('postgres_changes',{event:'*',schema:'public',table:'jr_public_events',filter:`room_id=eq.${roomId}`},()=>void sync()).subscribe(s=>{if(!alive)return;if(s==='SUBSCRIBED'){realtime=true;void sync();}else if(s==='CHANNEL_ERROR'||s==='TIMED_OUT'||s==='CLOSED'){realtime=false;setStatus('再接続中・定期取得');}});
+ const channel=groupMode?null:client.channel(`jr-public-${roomId}`).on('postgres_changes',{event:'*',schema:'public',table:'jr_public_events',filter:`room_id=eq.${roomId}`},()=>void sync()).subscribe(s=>{if(!alive)return;if(s==='SUBSCRIBED'){realtime=true;void sync();}else if(s==='CHANNEL_ERROR'||s==='TIMED_OUT'||s==='CLOSED'){realtime=false;setStatus('再接続中・定期取得');}});
  const timer=setInterval(()=>void sync(),15000),visible=()=>{if(document.visibilityState==='visible')void sync();};document.addEventListener('visibilitychange',visible);window.addEventListener('online',visible);
- return()=>{alive=false;clearInterval(timer);document.removeEventListener('visibilitychange',visible);window.removeEventListener('online',visible);void client.removeChannel(channel);};
- },[client,roomId,fetchRoom,apply,reloadChanges]);
+ return()=>{alive=false;clearInterval(timer);document.removeEventListener('visibilitychange',visible);window.removeEventListener('online',visible);if(channel)void client.removeChannel(channel);};
+ },[client,roomId,fetchRoom,apply,reloadChanges,groupMode]);
+ useEffect(()=>{let alive=true;if(!client){setGroupAvailable(false);if(groupMode)setGroupError('このグループのURLを確認してください。');return;}void client.rpc('jr_group_status',{}, {get:true}).then(({data,error})=>{if(alive)setGroupAvailable(!error&&data?.version===1);});if(groupMode)void client.rpc('jr_group_info',{}, {get:true}).then(({data,error})=>{if(!alive)return;if(error||!data?.name){setGroupError('グループを開けませんでした。共有されたURLと接続を確認してください。');return;}setGroupName(data.name);setGroupError('');});return()=>{alive=false;};},[client,groupMode]);
+ function privateGroupURL(token:string,id?:string){const custom=config&&(config.url!==import.meta.env.VITE_SUPABASE_URL||config.key!==import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY)?config:undefined;return groupShareURL(token,id,custom);}
+ async function createGroup(name:string){
+  if(!client||!groupAvailable)throw Error('グループを作成できません。接続を確認してからお試しください。');
+  const trimmed=name.trim();if(!trimmed||trimmed.length>60)throw Error('グループ名は1〜60文字で入力してください。');
+  let pending:{id:string;token:string;name:string};const storageKey='jr-pending-group:'+config!.url;
+  try{const saved=JSON.parse(sessionStorage.getItem(storageKey)??'null');pending=saved&&saved.name===trimmed&&/^[a-f0-9]{64}$/.test(saved.token)?saved:{id:crypto.randomUUID(),token:newGroupToken(),name:trimmed};sessionStorage.setItem(storageKey,JSON.stringify(pending));}catch{throw Error('専用URLを安全に保持するため、ブラウザのストレージを有効にしてください。');}
+  const {data,error}=await client.rpc('jr_group_create',{request_id:pending.id,group_name:trimmed,access_token:pending.token});
+  if(error||!data||data.error){if(data?.error==='RATE_LIMIT')throw Error('作成が混み合っています。しばらく待ってからお試しください。');throw Error('作成を確認できませんでした。同じ名前で再試行すると重複を防止できます。');}
+  location.assign(privateGroupURL(pending.token,data.room_id));sessionStorage.removeItem(storageKey);
+ }
  async function requestId(scope:string,payload:unknown):Promise<string>{
   const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(stableJSON(payload)));const digest=Array.from(new Uint8Array(bytes),b=>b.toString(16).padStart(2,'0')).join('');
-  try{const pending=JSON.parse(localStorage.getItem('jr-public-pending')??'null');if(pending?.scope===scope&&pending?.digest===digest)return pending.id;const id=crypto.randomUUID();localStorage.setItem('jr-public-pending',JSON.stringify({scope,digest,id}));return id;}catch{return crypto.randomUUID();}
+  try{const pending=JSON.parse(localStorage.getItem(groupMode?'jr-group-pending:'+groupToken:'jr-public-pending')??'null');if(pending?.scope===scope&&pending?.digest===digest)return pending.id;const id=crypto.randomUUID();localStorage.setItem(groupMode?'jr-group-pending:'+groupToken:'jr-public-pending',JSON.stringify({scope,digest,id}));return id;}catch{return crypto.randomUUID();}
  }
  async function mutate(id:string,operation:PublicOperation){
   if(!client)throw Error('NOT_CONNECTED');if(busy.current)throw Error('SAVING');busy.current=true;setSaving(true);const gen=generation.current;
-  try{const req=await requestId(id,operation);const {data,error}=await client.rpc('jr_public_apply',{target:id,request_id:req,device_id:device.current,operation});const next=unwrap<Room>(data,error);if(gen===generation.current)apply(next);try{localStorage.removeItem('jr-public-pending');}catch{};await Promise.allSettled([reloadRooms(),reloadChanges(id)]);return next;}
+  try{const req=await requestId(id,operation);const {data,error}=await client.rpc(groupRPC('jr_public_apply',groupMode),{target:id,request_id:req,device_id:device.current,operation});const next=unwrap<Room>(data,error);if(gen===generation.current)apply(next);try{localStorage.removeItem(groupMode?'jr-group-pending:'+groupToken:'jr-public-pending');}catch{};await Promise.allSettled([reloadRooms(),reloadChanges(id)]);return next;}
   catch(e){try{const latest=await fetchRoom(id);if(gen===generation.current)apply(latest);}catch{}throw e;}
   finally{busy.current=false;setSaving(false);}
  }
@@ -70,10 +84,10 @@ export function useCloud(onState:(state:State)=>void){
  }
  function selectRoom(id:string|null){if(busy.current)return;ref.current=null;setRoom(null);setRoomId(id);setMessage('');}
  function configure(next:CloudConfig){if(!validConfig(next))throw Error('Project URLと公開用Publishable keyを入力してください。Secret key・service_roleは使用できません。');localStorage.setItem('janroku-cloud-config',JSON.stringify(next));selectRoom(null);setConfig(next);setMessage('接続設定を保存しました。大会を選ぶか、新しく作成してください。');}
- async function createRoom(initial:State){if(!client||busy.current)throw Error('NOT_CONNECTED');busy.current=true;setSaving(true);try{const normalized=sharingState(initial);const req=await requestId('create',normalized);const {data,error}=await client.rpc('jr_public_create',{request_id:req,device_id:device.current,initial_state:normalized});const next=unwrap<Room>(data,error);try{localStorage.removeItem('jr-public-pending');}catch{}await reloadRooms();selectRoomAfterCreate(next.id);return next;}finally{busy.current=false;setSaving(false);}}
+ async function createRoom(initial:State){if(!client||busy.current)throw Error('NOT_CONNECTED');busy.current=true;setSaving(true);try{const normalized=sharingState(initial);const req=await requestId('create',normalized);const {data,error}=await client.rpc(groupRPC('jr_public_create',groupMode),{request_id:req,device_id:device.current,initial_state:normalized});const next=unwrap<Room>(data,error);try{localStorage.removeItem(groupMode?'jr-group-pending:'+groupToken:'jr-public-pending');}catch{}await reloadRooms();selectRoomAfterCreate(next.id);return next;}finally{busy.current=false;setSaving(false);}}
  function selectRoomAfterCreate(id:string){ref.current=null;setRoom(null);setRoomId(id);setMessage('');}
- function shareURL(id?:string){const url=new URL(location.origin+location.pathname);const p=new URLSearchParams();if(config){p.set('project',config.url);p.set('key',config.key);}if(id)p.set('room',id);url.hash=p.toString();return url.href;}
- return {config,client,roomId,room,rooms,changes,status,message,setMessage,saving,loading,active:!!roomId,configure,selectRoom,saveRemote,renameRoom,createRoom,shareURL,reloadRooms,reloadChanges,latest:()=>ref.current,
+ function shareURL(id?:string){if(groupMode)return groupToken?privateGroupURL(groupToken,id):location.origin+location.pathname; const url=new URL(location.origin+location.pathname);const p=new URLSearchParams();if(config){p.set('project',config.url);p.set('key',config.key);}if(id)p.set('room',id);url.hash=p.toString();return url.href;}
+ return {groupMode,groupName,groupError,groupAvailable,createGroup,config,client,roomId,room,rooms,changes,status,message,setMessage,saving,loading,active:!!roomId,configure,selectRoom,saveRemote,renameRoom,createRoom,shareURL,reloadRooms,reloadChanges,latest:()=>ref.current,
   restore:async(changeId:string)=>{if(!roomId)throw Error('NOT_CONNECTED');return mutate(roomId,{restore:changeId});},
   archive:async(item:RoomSummary)=>mutate(item.id,{changes:[{kind:'archive',id:item.id,before:{deleted_at:item.deleted_at},after:{deleted_at:'archive'}}]}),
   restoreRoom:async(id:string)=>{const list=await reloadChanges(id);const log=list.find(c=>c.kind==='archive'&&(c.after_data as {deleted_at?:string})?.deleted_at);if(!log)throw Error('NOT_FOUND');return mutate(id,{restore:log.id});}

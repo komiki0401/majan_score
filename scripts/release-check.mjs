@@ -45,6 +45,13 @@ async function main(){
   const rows=await response.json();if(!Array.isArray(rows))fail('Invalid event/history response.');
   for(const id of new Set(rows.map(row=>row.room_id))){const response=await get('rpc/jr_public_room?target='+encodeURIComponent(id));if(!response.ok)fail('Event/history references inaccessible tournament.');const room=await response.json();if(!room.state)fail('Event/history exposes inaccessible tournament.');}
  }
+ const groupStatus=await get('rpc/jr_group_status');
+ if(groupStatus.status===404){console.log('Group storage migration is not applied: new group creation remains disabled. Legacy checks passed.');}
+ else{
+  if(!groupStatus.ok||(await groupStatus.json()).version!==1)fail('Group API version check failed.');
+  for(const extraHeaders of [{},{'x-janroku-group':'0'.repeat(64)}]){let response;try{response=await fetch(root+'rpc/jr_group_info',{headers:{apikey:key,...extraHeaders},signal:AbortSignal.timeout(15000),redirect:'error'});}catch{fail('Group access probe failed (details withheld).');}if(![401,403].includes(response.status))fail('Group info must deny missing/unknown capabilities.');}
+  console.log('Group API deployed: missing/unknown capabilities are denied. No group was created or modified.');
+ }
  console.log('Release check passed: source/build key scan and GET-only anonymous Supabase access checks ('+rooms.length+' public tournaments).');
  console.log('RLS/ACL definitions are verified separately by in-memory database tests; production catalogs are not inspected.');
 }
