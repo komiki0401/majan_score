@@ -37,6 +37,7 @@ function unwrap<T>(data:T&{error?:string}|null,error:{message:string}|null):T{if
 export function useCloud(onState:(state:State)=>void){
  const [{mode:groupMode,token:groupToken}]=useState(groupAccess);
  const [groupAvailable,setGroupAvailable]=useState<boolean|null>(null),[groupName,setGroupName]=useState(''),[groupError,setGroupError]=useState('');
+ const pendingGroup=useRef<{id:string;token:string;name:string}|null>(null);
  const [config,setConfig]=useState<CloudConfig|null>(readConfig);
  // No sign-in, anonymous Auth account, session persistence, or Auth network requests.
  const client=useMemo(()=>config&&(!groupMode||groupToken)?createClient(config.url,config.key,{global:{headers:groupToken?{'x-janroku-group':groupToken}:{}},auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},realtime:{params:{eventsPerSecond:10}}}):null,[config,groupToken,groupMode]);
@@ -59,11 +60,29 @@ export function useCloud(onState:(state:State)=>void){
  async function createGroup(name:string){
   if(!client||!groupAvailable)throw Error('グループを作成できません。接続を確認してからお試しください。');
   const trimmed=name.trim();if(!trimmed||trimmed.length>60)throw Error('グループ名は1〜60文字で入力してください。');
-  let pending:{id:string;token:string;name:string};const storageKey='jr-pending-group:'+config!.url;
-  try{const saved=JSON.parse(sessionStorage.getItem(storageKey)??'null');pending=saved&&saved.name===trimmed&&/^[a-f0-9]{64}$/.test(saved.token)?saved:{id:crypto.randomUUID(),token:newGroupToken(),name:trimmed};sessionStorage.setItem(storageKey,JSON.stringify(pending));}catch{throw Error('専用URLを安全に保持するため、ブラウザのストレージを有効にしてください。');}
+  const storageKey='jr-pending-group:'+config!.url;
+  let pending=pendingGroup.current;
+  if(!pending||pending.name!==trimmed){
+   try{const saved=JSON.parse(sessionStorage.getItem(storageKey)??'null');if(saved?.name===trimmed&&typeof saved.token==='string'&&/^[a-f0-9]{64}$/.test(saved.token)&&typeof saved.id==='string'&&/^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(saved.id))pending=saved;else pending=null;}catch{pending=null;}
+   if(!pending)pending={id:crypto.randomUUID(),token:newGroupToken(),name:trimmed};
+   pendingGroup.current=pending;
+  }
+  try{sessionStorage.setItem(storageKey,JSON.stringify(pending));}catch{/* Keep the retry identity in memory when storage is unavailable. */}
   const {data,error}=await client.rpc('jr_group_create',{request_id:pending.id,group_name:trimmed,access_token:pending.token});
-  if(error||!data||data.error){if(data?.error==='RATE_LIMIT')throw Error('作成が混み合っています。しばらく待ってからお試しください。');throw Error('作成を確認できませんでした。同じ名前で再試行すると重複を防止できます。');}
-  location.assign(privateGroupURL(pending.token,data.room_id));sessionStorage.removeItem(storageKey);
+  if(error||!data||data.error){
+   const code=String(data?.error??error?.code??'');
+   if(code==='RATE_LIMIT'||code==='429')throw Error('作成回数の上限に達しました。1分ほど待ってから、同じ名前で再試行してください。続く場合は当日の上限に達している可能性があります。');
+   if(code==='PGRST202'||code==='42883')throw Error('グループ作成機能の準備を確認できませんでした。ページを再読み込みしてからお試しください。（GROUP_API_UNAVAILABLE）');
+   if(code==='42501')throw Error('グループ作成の権限を確認できませんでした。管理者に確認してください。（GROUP_PERMISSION_DENIED）');
+   if(code==='INVALID_GROUP')throw Error('グループ名を確認してください。1〜60文字で入力できます。');
+   const diagnostic=/^[A-Z0-9_]{3,32}$/.test(code)?'（'+code+'）':'';
+   throw Error('作成を確認できませんでした。接続を確認し、同じ名前で再試行してください。重複作成を防いで再確認します。'+diagnostic);
+  }
+  if(typeof data.room_id!=='string'||!/^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(data.room_id))throw Error('作成結果を確認できませんでした。同じ名前で再試行してください。（INVALID_GROUP_RESPONSE）');
+  const url=privateGroupURL(pending.token,data.room_id);
+  // Retain the identity so reopening the form or retrying after navigation recovers the same group.
+  pendingGroup.current=pending;
+  return url;
  }
  async function requestId(scope:string,payload:unknown):Promise<string>{
   const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(stableJSON(payload)));const digest=Array.from(new Uint8Array(bytes),b=>b.toString(16).padStart(2,'0')).join('');
