@@ -4,6 +4,8 @@ React + TypeScript + Viteの麻雀スコア管理アプリ。公開大会はア�
 
 ## 開発
 
+Windows PCへの移行とスマホからのCodex接続は[Windows開発引き継ぎ手順](docs/windows-local-development.md)を参照してください。
+
 Node.js 24 / npm 11。
 
 ```sh
