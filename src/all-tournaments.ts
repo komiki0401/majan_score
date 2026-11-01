@@ -1,4 +1,4 @@
-import {defaultRules,emptyState,type State} from './domain';
+import {defaultRules,emptyState,gameDay,type State} from './domain';
 import {type Room,type RoomSummary} from './cloud';
 
 /** View-only records: keep all tournament/game IDs distinct, combine people by name. */
@@ -44,4 +44,10 @@ export async function loadTournamentScores(
  await Promise.all(Array.from({length:Math.min(4,active.length)},worker));
  const keep=new Set(active.map(room=>room.id));for(const id of cache.keys())if(!keep.has(id))cache.delete(id);
  return result;
+}
+
+/** Most recent played date, then update time; archives never count. */
+export function recentTournament(rooms:Room[]):Room|null{
+ const date=(room:Room)=>room.state.games.reduce((latest,game)=>gameDay(game)>latest?gameDay(game):latest,'');
+ return rooms.filter(room=>!room.deleted_at).sort((a,b)=>date(b).localeCompare(date(a))||b.updated_at.localeCompare(a.updated_at)||a.id.localeCompare(b.id))[0]??null;
 }

@@ -1,5 +1,5 @@
 import {describe,it,expect,vi} from 'vitest';
-import {allTournamentState,loadTournamentScores,loadTournamentIndex} from './all-tournaments';
+import {allTournamentState,loadTournamentScores,loadTournamentIndex,recentTournament} from './all-tournaments';
 import {calculate,defaultRules,emptyState,forDay,standings,rankProgress,type State} from './domain';
 import {type Room,type RoomSummary} from './cloud';
 const makeRoom=(id:string,day:string,names:string[],scores:number[]):Room=>({id,version:1,updated_at:'2026-11-01T00:00:00Z',deleted_at:null,state:{...structuredClone(emptyState),name:id,players:names.map((name,i)=>({id:`${id}-${i}`,name})),games:[{id:'copied-game-id',table:'1',date:day+'T03:00:00Z',playedOn:day,rules:structuredClone(defaultRules),revisions:[],rows:calculate(scores.map((score,i)=>({playerId:`${id}-${i}`,score})),defaultRules)}]}});
@@ -23,4 +23,9 @@ describe('complete, versioned tournament loading',()=>{
 describe('full public tournament index',()=>{
  it('reads beyond the catalog limit and beyond one API page',async()=>{const rows=Array.from({length:1001},(_,i)=>({room_id:String(i),version:1,updated_at:'now'}));const read=vi.fn(async(offset:number,size:number)=>rows.slice(offset,offset+size));const index=await loadTournamentIndex(read);expect(index).toHaveLength(1001);expect(index[1000].id).toBe('1000');expect(read).toHaveBeenCalledTimes(3);});
  it('never treats a failed page as a complete tournament list',async()=>{const read=vi.fn(async(offset:number)=>{if(offset)throw Error('offline');return Array.from({length:500},(_,i)=>({room_id:String(i),version:1,updated_at:'now'}));});await expect(loadTournamentIndex(read)).rejects.toThrow('offline');});
+});
+
+describe('recent tournament',()=>{
+ it('prefers the latest played date over a later settings update and excludes archives',()=>{expect(recentTournament([{...a,updated_at:'2099-01-01'},b,{...b,id:'archived',deleted_at:'now'}])?.id).toBe(b.id);});
+ it('uses update time for unplayed tournaments and returns null for an empty catalog',()=>{expect(recentTournament([{...a,state:{...a.state,games:[]}}, {...b,updated_at:'2099-01-01',state:{...b.state,games:[]}}])?.id).toBe(b.id);expect(recentTournament([])).toBeNull();});
 });
