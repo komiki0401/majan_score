@@ -1,7 +1,7 @@
 export type Rules = { start:number; returnScore:number; uma:number[]; oka:boolean; okaWeights:number[]; tie:'split'|'seat'; rounding:'none'|'round'|'floor' };
 export const defaultRules:Rules={start:25000,returnScore:30000,uma:[20,10,-10,-20],oka:true,okaWeights:[1,0,0,0],tie:'split',rounding:'none'};
 export type Row={playerId:string;score:number|null;rank:number;point:number;seat?:number};
-export type Game={id:string;table:string;date:string;playedOn?:string;rows:Row[];rules:Rules;inputMode?:'score'|'points';revisions:{date:string;playedOn?:string;rows:Row[];rules:Rules;inputMode?:'score'|'points'}[]};
+export type Game={id:string;table:string;round?:number;date:string;playedOn?:string;rows:Row[];rules:Rules;inputMode?:'score'|'points';revisions:{date:string;playedOn?:string;rows:Row[];rules:Rules;inputMode?:'score'|'points'}[]};
 export type Player={id:string;name:string};
 export type State={version:1;name:string;players:Player[];games:Game[];rules:Rules};
 export const emptyState:State={version:1,name:'週末のセット麻雀',players:[],games:[],rules:defaultRules};
@@ -16,7 +16,7 @@ export function calculate(inputs:{playerId:string;score:number}[],r:Rules):Row[]
 export function standings(state:State){return state.players.map(p=>{const rows=state.games.flatMap(g=>g.rows.filter(r=>r.playerId===p.id));return {...p,count:rows.length,total:rows.reduce((a,x)=>a+x.point,0),average:rows.length?rows.reduce((a,x)=>a+x.rank,0)/rows.length:0,ranks:[1,2,3,4].map(n=>rows.filter(x=>x.rank===n).length)};}).sort((a,b)=>b.total-a.total);}
 export interface Repository{load():State;save(state:State):void}
 export const repository:Repository={load(){const raw=localStorage.getItem('janroku-v1');if(!raw)return structuredClone(emptyState);const s=JSON.parse(raw);if(s.version!==1||!Array.isArray(s.players)||!Array.isArray(s.games)||!s.rules)throw Error('保存データの形式を読み取れません。');return s;},save(s){localStorage.setItem('janroku-v1',JSON.stringify(s));}};
-export function csv(state:State){const cell=(v:unknown)=>{let s=String(v);if(/^[=+\-@\t\r]/.test(s))s="'"+s;return '"'+s.replaceAll('"','""')+'"';};return '\uFEFF'+[['日時','卓','参加者','持ち点','順位','ポイント','対局日'],...state.games.flatMap(g=>g.rows.map(r=>[g.date,g.table,state.players.find(p=>p.id===r.playerId)?.name??'不明',r.score??'',r.rank,r.point,gameDay(g)]))].map(r=>r.map(cell).join(',')).join('\r\n');}
+export function csv(state:State){const cell=(v:unknown)=>{let s=String(v);if(/^[=+\-@\t\r]/.test(s))s="'"+s;return '"'+s.replaceAll('"','""')+'"';};return '\uFEFF'+[['日時','卓','参加者','持ち点','順位','ポイント','対局日','半荘番号'],...state.games.flatMap(g=>g.rows.map(r=>[g.date,g.table,state.players.find(p=>p.id===r.playerId)?.name??'不明',r.score??'',r.rank,r.point,gameDay(g),g.round??'']))].map(r=>r.map(cell).join(',')).join('\r\n');}
 
 export function fromPoints(inputs:{playerId:string;point:number;rank:number}[],rules:Rules):Row[]{
  if(inputs.length!==4||new Set(inputs.map(x=>x.playerId)).size!==4||inputs.some(x=>!x.playerId||!Number.isFinite(x.point)||Math.abs(x.point)>1000000||Math.abs(x.point*10000-Math.round(x.point*10000))>1e-5))throw Error('異なる4人と有効な半荘ポイント（小数第4位まで）を入力してください。');
