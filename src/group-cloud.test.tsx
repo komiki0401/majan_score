@@ -5,6 +5,7 @@ import {beforeEach,afterEach,it,expect,vi} from 'vitest';
 import {createClient} from '@supabase/supabase-js';
 import {useCloud,type CloudConnection} from './cloud';
 import {emptyState} from './domain';
+import {useAllTournamentScores} from './useAllTournamentScores';
 vi.mock('@supabase/supabase-js',()=>({createClient:vi.fn()}));
 let root:Root,host:HTMLDivElement,cloud:CloudConnection,rpc:ReturnType<typeof vi.fn>,from:ReturnType<typeof vi.fn>,channel:ReturnType<typeof vi.fn>,assign:ReturnType<typeof vi.fn>;
 const token='a'.repeat(64),id='11111111-1111-4111-8111-111111111111',onState=vi.fn();
@@ -27,3 +28,26 @@ it('works without session storage and keeps in-memory retries stable',async()=>{
 it('ignores damaged pending storage and gives actionable rate-limit and permission errors',async()=>{await mount();const storage=vi.spyOn(Storage.prototype,'getItem').mockReturnValue('{invalid-json');try{rpc.mockImplementation(async()=>({data:{error:'RATE_LIMIT'},error:null}));await expect(cloud.createGroup('テスト')).rejects.toThrow('1分');rpc.mockImplementation(async()=>({data:null,error:{code:'42501',message:'private detail'}}));await expect(cloud.createGroup('テスト')).rejects.toThrow('GROUP_PERMISSION_DENIED');expect(assign).not.toHaveBeenCalled();}finally{storage.mockRestore();}});
 
 it('recovers the same URL if the creation form is submitted again after success',async()=>{await mount();const first=await cloud.createGroup('同じ仲間');const request=rpc.mock.calls.at(-1) as unknown as [string,{request_id:string;access_token:string}];const second=await cloud.createGroup('同じ仲間');const retry=rpc.mock.calls.at(-1) as unknown as [string,{request_id:string;access_token:string}];expect(second).toBe(first);expect(retry[1].request_id).toBe(request[1].request_id);expect(retry[1].access_token).toBe(request[1].access_token);});
+
+it('uses one shared index request per unchanged foreground cycle and detects another device update',async()=>{
+ vi.useFakeTimers();let version=1,visibility='visible';
+ const visible=vi.spyOn(document,'visibilityState','get').mockImplementation(()=>visibility as DocumentVisibilityState);
+ const original=rpc.getMockImplementation()!;
+ rpc.mockImplementation(async(name:string)=>name==='jr_group_index'?{data:[{room_id:id,version,updated_at:'date'}],error:null}:name==='jr_group_room'?{data:{id,version,state:{...structuredClone(emptyState),name:'大会'+version},updated_at:'date',deleted_at:null},error:null}:original(name));
+ let scores:ReturnType<typeof useAllTournamentScores>;
+ function Example(){cloud=useCloud(onState);scores=useAllTournamentScores(cloud,true);return null;}
+ try{
+  await act(async()=>root.render(<Example/>));
+  expect(rpc.mock.calls.filter(([name])=>name==='jr_group_room')).toHaveLength(1);
+  rpc.mockClear();onState.mockClear();const before=scores!.state;
+  await act(async()=>vi.advanceTimersByTimeAsync(60000));
+  expect(rpc.mock.calls.map(([name])=>name)).toEqual(Array(4).fill('jr_group_index'));
+  expect(onState).not.toHaveBeenCalled();expect(scores!.state).toBe(before);
+  visibility='hidden';await act(async()=>document.dispatchEvent(new Event('visibilitychange')));rpc.mockClear();
+  await act(async()=>vi.advanceTimersByTimeAsync(60000));expect(rpc).not.toHaveBeenCalled();
+  version=2;visibility='visible';await act(async()=>document.dispatchEvent(new Event('visibilitychange')));
+  expect(cloud.room?.version).toBe(2);expect(scores!.state).not.toBe(before);
+  expect(rpc.mock.calls.filter(([name])=>name==='jr_group_room')).toHaveLength(1);
+  expect(rpc.mock.calls.filter(([name])=>name==='jr_group_changes')).toHaveLength(1);
+ }finally{await act(async()=>root.unmount());visible.mockRestore();vi.useRealTimers();root=createRoot(host);}
+});

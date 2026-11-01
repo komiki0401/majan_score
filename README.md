@@ -10,6 +10,8 @@ Windows PCへの移行とスマホからのCodex接続は[Windows開発引き継
 
 Node.js 24 / npm 11。
 
+通信量の改善、無料枠の利用量試算、運用監視、広告導入前の注意点は[多グループ運営・コストメモ](docs/operations-and-costs.md)を参照してください。
+
 ```sh
 npm ci
 npm run dev
