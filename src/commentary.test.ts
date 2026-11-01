@@ -1,0 +1,8 @@
+import {describe,it,expect} from 'vitest';
+import {commentaryLines,liveCommentary} from './commentary';
+import {emptyState,defaultRules,type State} from './domain';
+const fixture=():State=>({...structuredClone(emptyState),players:['トップ','二番','三番','四番'].map((name,i)=>({id:String(i),name})),games:[{id:'one',date:'2026-05-05',table:'1',rules:defaultRules,revisions:[],rows:[100,5,4,-109].map((point,i)=>({playerId:String(i),point,score:25000,rank:i+1,seat:i}))}]});
+describe('commentary for all positions',()=>{
+ it('includes a close contest outside first place and a positive comeback comment',()=>{const s=fixture(),original=structuredClone(s),lines=commentaryLines(s);expect(lines.some(line=>line.includes('二番さんと三番さんが接戦'))).toBe(true);expect(lines.some(line=>line.includes('四番さん')&&line.includes('巻き返し'))).toBe(true);expect(liveCommentary(s,1)).not.toBe(liveCommentary(s));expect(liveCommentary(s,lines.length)).toBe(liveCommentary(s));expect(s).toEqual(original);});
+ it('notices a latest half-game win by a player who is not overall leader',()=>{const s=fixture();s.games.push({...s.games[0],id:'two',date:'2026-05-06',rows:s.games[0].rows.map((r,i)=>({...r,rank:[4,1,2,3][i],point:[-10,20,0,-10][i]}))});expect(commentaryLines(s).some(line=>line.includes('二番さんが直近の半荘でトップ'))).toBe(true);});
+});
