@@ -44,5 +44,11 @@ export function rankProgress(state:State){
  return {games,series:state.players.filter(p=>games.some(g=>g.rows.some(r=>r.playerId===p.id))).map(player=>({...player,values:games.map(g=>g.rows.find(r=>r.playerId===player.id)?.rank??null)}))};
 }
 
+/** Each player's own games, without gaps for other tables or missed rounds. */
+export function personalRankProgress(state:State){
+ const games=orderedGames(state);
+ return state.players.map(player=>({...player,entries:games.flatMap(game=>{const row=game.rows.find(r=>r.playerId===player.id);return row?[{game,rank:row.rank}]:[];})})).filter(player=>player.entries.length);
+}
+
 /** Freeze legacy calendar dates before sending records to people in other time zones. */
 export function sharingState(state:State):State{return {...state,games:state.games.map(game=>({...game,playedOn:gameDay(game)}))};}

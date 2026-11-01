@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {calculate,fromPoints,standings,orderedGames,pointProgress,rankProgress,gameDay,forDay,localDay,validDay,defaultRules,csv,emptyState} from './domain';
+import {calculate,fromPoints,standings,orderedGames,pointProgress,rankProgress,personalRankProgress,gameDay,forDay,localDay,validDay,defaultRules,csv,emptyState} from './domain';
 const input=(scores:number[])=>scores.map((score,i)=>({playerId:String(i),score}));
 describe('score calculation',()=>{
  it('calculates rank, uma and oka with zero sum',()=>{const rows=calculate(input([40000,30000,20000,10000]),defaultRules);expect(rows.map(x=>x.point)).toEqual([50,10,-20,-40]);expect(rows.reduce((a,x)=>a+x.point,0)).toBe(0);});
@@ -48,4 +48,8 @@ describe('rank progress',()=>{
  const state={...emptyState,players,games:[game('june','2026-06-07',[{playerId:'a',rank:4,point:100}]),game('may','2026-05-05',[{playerId:'a',rank:1,point:-20},{playerId:'b',rank:1,point:10}])]};
  it('uses recorded half-game ranks, with ties and missing entries',()=>{expect(rankProgress(state).series.map(p=>p.values)).toEqual([[1,4],[1,null]]);});
  it('respects date filters and has no imaginary starting rank',()=>{expect(rankProgress(forDay(state,'2026-06-07')).series.map(p=>p.values)).toEqual([[4]]);expect(rankProgress({...state,games:[]})).toEqual({games:[],series:[]});});
+});
+
+describe('personal rank progression',()=>{
+ it('counts only the person own games, ordered by date, without unplayed gaps',()=>{const state={...structuredClone(emptyState),players:[{id:'a',name:'A'},{id:'b',name:'B'}],games:[{id:'later',date:'2026-06-07',playedOn:'2026-06-07',table:'2',rules:defaultRules,revisions:[],rows:[{playerId:'a',score:25000,point:0,rank:4,seat:0},{playerId:'b',score:25000,point:0,rank:2,seat:1}]},{id:'early',date:'2026-05-05',playedOn:'2026-05-05',table:'1',rules:defaultRules,revisions:[],rows:[{playerId:'a',score:25000,point:0,rank:1,seat:0}]}]};const original=structuredClone(state);const series=personalRankProgress(state);expect(series.map(p=>p.entries.map(e=>e.rank))).toEqual([[1,4],[2]]);expect(series[1].entries[0].game.id).toBe('later');expect(state).toEqual(original);expect(personalRankProgress({...state,games:[]})).toEqual([]);});
 });
