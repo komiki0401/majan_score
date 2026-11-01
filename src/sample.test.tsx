@@ -42,6 +42,10 @@ it('creates a sample tournament in local storage and reloads the selected tourna
  const saved=loadSample();expect(saved.rooms).toHaveLength(3);expect(saved.rooms.find(r=>r.id===saved.selected)?.state.name).toBe('おためし大会');expect(host.querySelector('.score-tournament strong')?.textContent).toBe('おためし大会');
  expect(localStorage.getItem('janroku-v1')).toBeNull();expect(createClient).not.toHaveBeenCalled();
 });
+it('opens the participant input for the score tournament without changing any records',async()=>{
+ await act(async()=>root.render(<App sample/>));await click(button('スコア入力＋'));const before=localStorage.getItem(SAMPLE_KEY);
+ await click(button('参加者を追加したい場合はこちら'));expect(host.querySelector('h1')?.textContent).toBe('大会管理');expect(document.activeElement).toBe(host.querySelector('[aria-label="参加者名"]'));expect(host.querySelector<HTMLSelectElement>('[aria-label="参加者を管理する大会"]')?.value).toBe('sample-room-0');expect(localStorage.getItem(SAMPLE_KEY)).toBe(before);
+});
 it('updates a new tournament name with its date, preserves manual edits and carries the date into score entry',async()=>{
  await act(async()=>root.render(<App sample/>));await click(button('大会管理'));await click(host.querySelector('.tournament-list-disclosure summary')!);
  const date=host.querySelector<HTMLInputElement>('[aria-label="新しい大会の対局日"]')!,name=host.querySelector<HTMLInputElement>('[aria-label="新しい大会名"]')!;

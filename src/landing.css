@@ -4,3 +4,5 @@
 @media(prefers-reduced-motion:reduce){.landing *{scroll-behavior:auto!important}}
 
 .landing-start[hidden]{display:none}.landing-close-creation{margin:18px auto 0}.dashboard-home-link{margin:28px 0 8px;text-align:center}.dashboard-home-link a{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:12px 22px;border:1px solid var(--border);border-radius:10px;color:var(--text);background:var(--surface);font-size:12px;text-decoration:none}.dashboard-home-link a:hover{color:#0c6751}.dashboard-home-link a:focus-visible{outline:3px solid #c39b50;outline-offset:4px}
+
+.landing-nav .landing-brand-logo{display:block;width:180px;height:auto;padding:7px 10px;background:#093d31;border-radius:10px}.score-participants-link{display:flex;margin:16px auto 0;min-height:44px;align-items:center;justify-content:center;text-align:center}.participant-management{scroll-margin-top:24px}@media(max-width:760px){.landing-nav .landing-brand-logo{width:140px}.score-participants-link{font-size:11px}.participant-management{scroll-margin-top:14px}}
