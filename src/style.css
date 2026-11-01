@@ -31,3 +31,5 @@
 
 .signed-number-input{display:flex;align-items:center;gap:6px}.signed-number-input .sign-toggle{flex-shrink:0;min-width:44px;min-height:44px;border:1px solid var(--border);border-radius:8px;background:var(--bg);font-size:15px;font-weight:600;padding:6px;color:var(--text)}.signed-number-input .sign-toggle[aria-pressed=true]{border-color:#b96e63;color:#b96e63;background:var(--surface)}.score-input .signed-number-input input{min-width:0;flex:1}@media(max-width:760px){.signed-number-input{gap:4px}.score-input .signed-number-input input{font-size:22px;padding-left:5px}}
 @media(max-width:480px){.score-row{flex-wrap:wrap}.score-row>select{flex:1 1 100%;width:100%}.score-row>.score-input{flex:1 1 100%}.score-input .signed-number-input input{font-size:24px}}
+
+.management-participant-target{display:flex;flex-direction:column;gap:8px;margin-bottom:18px;font-size:12px}.management-participant-target select{width:100%;min-height:44px}.participant-fields{border:0;padding:0;margin:0;min-width:0}.rooms-view+.form-panel{margin-top:24px}
