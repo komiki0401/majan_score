@@ -33,3 +33,5 @@
 @media(max-width:480px){.score-row{flex-wrap:wrap}.score-row>select{flex:1 1 100%;width:100%}.score-row>.score-input{flex:1 1 100%}.score-input .signed-number-input input{font-size:24px}}
 
 .management-participant-target{display:flex;flex-direction:column;gap:8px;margin-bottom:18px;font-size:12px}.management-participant-target select{width:100%;min-height:44px}.participant-fields{border:0;padding:0;margin:0;min-width:0}.rooms-view+.form-panel{margin-top:24px}
+
+.tournament-list-disclosure{margin:0 0 24px;padding:0;border:1px solid var(--border);border-radius:10px;background:var(--surface)}.tournament-list-disclosure>summary{min-height:48px;padding:16px 20px;font-size:14px;font-weight:600;color:var(--text)}.tournament-list-content{padding:8px 16px 16px}.room-rename{display:flex;flex-direction:column;gap:12px;margin-top:16px}.room-rename label{display:flex;flex-direction:column;gap:7px;font-size:12px}.room-rename input{width:100%;min-height:44px}.room-rename>div{display:flex;gap:10px}

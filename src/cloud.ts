@@ -62,12 +62,18 @@ export function useCloud(onState:(state:State)=>void){
   finally{busy.current=false;setSaving(false);}
  }
  async function saveRemote(next:State,base:State,original?:Game|null,targetGameId?:string){if(!roomId||!ref.current||ref.current.id!==roomId)throw Error('NOT_CONNECTED');const patch=stateChanges(base,next,original,targetGameId);if(!patch.length)return;await mutate(roomId,{changes:patch});}
+ async function renameRoom(id:string,name:string){
+  const trimmed=name.trim();if(!trimmed||trimmed.length>60)throw Error('大会名は1〜60文字で入力してください。');
+  const current=await fetchRoom(id);if(current.deleted_at)throw Error('ARCHIVED');
+  const changes=stateChanges(current.state,{...current.state,name:trimmed});
+  if(changes.length)await mutate(id,{changes});
+ }
  function selectRoom(id:string|null){if(busy.current)return;ref.current=null;setRoom(null);setRoomId(id);setMessage('');}
  function configure(next:CloudConfig){if(!validConfig(next))throw Error('Project URLと公開用Publishable keyを入力してください。Secret key・service_roleは使用できません。');localStorage.setItem('janroku-cloud-config',JSON.stringify(next));selectRoom(null);setConfig(next);setMessage('接続設定を保存しました。大会を選ぶか、新しく作成してください。');}
  async function createRoom(initial:State){if(!client||busy.current)throw Error('NOT_CONNECTED');busy.current=true;setSaving(true);try{const normalized=sharingState(initial);const req=await requestId('create',normalized);const {data,error}=await client.rpc('jr_public_create',{request_id:req,device_id:device.current,initial_state:normalized});const next=unwrap<Room>(data,error);try{localStorage.removeItem('jr-public-pending');}catch{}await reloadRooms();selectRoomAfterCreate(next.id);return next;}finally{busy.current=false;setSaving(false);}}
  function selectRoomAfterCreate(id:string){ref.current=null;setRoom(null);setRoomId(id);setMessage('');}
  function shareURL(id?:string){const url=new URL(location.origin+location.pathname);const p=new URLSearchParams();if(config){p.set('project',config.url);p.set('key',config.key);}if(id)p.set('room',id);url.hash=p.toString();return url.href;}
- return {config,client,roomId,room,rooms,changes,status,message,setMessage,saving,loading,active:!!roomId,configure,selectRoom,saveRemote,createRoom,shareURL,reloadRooms,reloadChanges,latest:()=>ref.current,
+ return {config,client,roomId,room,rooms,changes,status,message,setMessage,saving,loading,active:!!roomId,configure,selectRoom,saveRemote,renameRoom,createRoom,shareURL,reloadRooms,reloadChanges,latest:()=>ref.current,
   restore:async(changeId:string)=>{if(!roomId)throw Error('NOT_CONNECTED');return mutate(roomId,{restore:changeId});},
   archive:async(item:RoomSummary)=>mutate(item.id,{changes:[{kind:'archive',id:item.id,before:{deleted_at:item.deleted_at},after:{deleted_at:'archive'}}]}),
   restoreRoom:async(id:string)=>{const list=await reloadChanges(id);const log=list.find(c=>c.kind==='archive'&&(c.after_data as {deleted_at?:string})?.deleted_at);if(!log)throw Error('NOT_FOUND');return mutate(id,{restore:log.id});}
