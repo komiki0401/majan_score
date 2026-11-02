@@ -18,3 +18,9 @@ it('rotates every 20 seconds without controls, wraps and clears its timer',async
  await act(async()=>vi.advanceTimersByTime(20000*(lines.length-1)));expect(text()).toBe(lines[0]);
  await act(async()=>root.render(<></>));expect(vi.getTimerCount()).toBe(0);
 });
+it('keeps the current message on an unchanged render and resets one timer when the data changes',async()=>{
+ const state=structuredClone(emptyState);await act(async()=>root.render(<TableCommentary state={state}/>));await act(async()=>vi.advanceTimersByTime(60000));const current=host.querySelector('p')?.textContent;
+ await act(async()=>root.render(<TableCommentary state={state}/>));expect(host.querySelector('p')?.textContent).toBe(current);expect(vi.getTimerCount()).toBe(1);
+ const changed={...structuredClone(emptyState),players:[{id:'p',name:'記録者'}],games:[{id:'g',date:'2026-11-02',table:'1',rules:state.rules,revisions:[],rows:[{playerId:'p',score:25000,rank:1,point:10}]}]};
+ await act(async()=>root.render(<TableCommentary state={changed}/>));expect(host.querySelector('p')?.textContent).toBe(commentaryLines(changed)[0]);expect(vi.getTimerCount()).toBe(1);
+});
