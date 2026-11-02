@@ -1,3 +1,5 @@
+import {shortGroupRoute,shortGroupURL} from './group-sharing';
+import {storedEditor,rememberEditor,issueShortLink,groupClient} from './short-links';
 import {prepareGroupTournament} from './group-initial-tournament';
 import {tournamentName} from './tournament-name';
 import {loadTournamentScores} from './all-tournaments';
@@ -22,10 +24,11 @@ export function readConfig():CloudConfig|null{
  const built={url:import.meta.env.VITE_SUPABASE_URL??'',key:import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY??''};if(validConfig(built))return built;
  const saved=JSON.parse(localStorage.getItem('janroku-cloud-config')??'null');return validConfig(saved)?saved:null;}catch{return null;}
 }
-function linkedRoom():string|null{try{const r=new URLSearchParams(location.hash.slice(1)).get('room');return r&&/^[0-9a-f-]{36}$/.test(r)?r:null;}catch{return null;}}
+function linkedRoom():string|null{const short=shortGroupRoute();if(short)return short.roomId;try{const r=new URLSearchParams(location.hash.slice(1)).get('room');return r&&/^[0-9a-f-]{36}$/.test(r)?r:null;}catch{return null;}}
 function deviceId():string{try{const v=localStorage.getItem('janroku-device-id');if(v&&/^[0-9a-f-]{36}$/.test(v))return v;const id=crypto.randomUUID();localStorage.setItem('janroku-device-id',id);return id;}catch{return crypto.randomUUID();}}
 export function cloudMessage(error:unknown):string{
  const m=error instanceof Error?error.message:String((error as {message?:string})?.message??error);
+ if(m.includes('READ_ONLY'))return '閲覧専用です。入力・編集には編集キーが必要です。';
  if(m.includes('VERSION_CONFLICT'))return '同じ記録が別の端末で変更されました。最新の記録を取得したので、入力内容を確認して再保存してください。';
  if(m.includes('DUPLICATE_ROUND'))return 'この日・卓・半荘番号はすでに登録されています。履歴を確認し、新しい半荘なら番号を変更してください。';
  if(m.includes('DUPLICATE_PLAYER'))return '同じ名前の参加者がすでに登録されています。参加者一覧を確認してください。';
@@ -40,13 +43,17 @@ export function cloudMessage(error:unknown):string{
 }
 function unwrap<T>(data:T&{error?:string}|null,error:{message:string}|null):T{if(error)throw Error(error.message);if(!data)throw Error('NOT_FOUND');if(data.error)throw Error(data.error);return data;}
 export function useCloud(onState:(state:State)=>void,enabled=true,workspace=true){
- const [{mode:groupMode,token:groupToken}]=useState(groupAccess);
+ const [{mode:groupMode,token:urlToken}]=useState(groupAccess);
+ const [shortRoute]=useState(shortGroupRoute);
  const [groupAvailable,setGroupAvailable]=useState<boolean|null>(null),[groupName,setGroupName]=useState(''),[groupError,setGroupError]=useState('');
  const pendingTournament=useRef<{key:string;state:State}|null>(null);
  const pendingGroup=useRef<{id:string;token:string;name:string;initialName?:string;nameRequest?:string;ready?:boolean}|null>(null);
  const [config,setConfig]=useState<CloudConfig|null>(()=>enabled?readConfig():null);
+ const [groupToken]=useState(()=>urlToken??(shortRoute&&config?storedEditor(config.url,shortRoute.shortId):null));
+ const [shortId,setShortId]=useState<string|null>(shortRoute?.shortId??null);
+ const readOnly=groupMode&&!!shortRoute&&!groupToken;
  // No sign-in, anonymous Auth account, session persistence, or Auth network requests.
- const client=useMemo(()=>enabled&&config&&(!groupMode||groupToken)?createClient(config.url,config.key,{global:{headers:groupToken?{'x-janroku-group':groupToken}:{}},auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},realtime:{params:{eventsPerSecond:10}}}):null,[config,groupToken,groupMode,enabled]);
+ const client=useMemo(()=>enabled&&config&&(!groupMode||groupToken||shortRoute)?createClient(config.url,config.key,{global:{headers:{...(groupToken?{'x-janroku-group':groupToken}:{}),...(shortRoute?{'x-janroku-view':shortRoute.shortId}:{})}},auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},realtime:{params:{eventsPerSecond:10}}}):null,[config,groupToken,groupMode,shortRoute,enabled]);
  const reader=useMemo(()=>client?cloudReader(client,groupMode):null,[client,groupMode]);
  const [roomId,setRoomId]=useState<string|null>(linkedRoom),[room,setRoom]=useState<Room|null>(null),[rooms,setRooms]=useState<RoomSummary[]>([]),[changes,setChanges]=useState<CloudChange[]>([]);
  const [status,setStatus]=useState('未接続'),[message,setMessage]=useState(''),[saving,setSaving]=useState(false),[loading,setLoading]=useState(false);
@@ -65,7 +72,9 @@ export function useCloud(onState:(state:State)=>void,enabled=true,workspace=true
  return()=>{alive=false;control.stop();if(channel)void client.removeChannel(channel);};
  },[client,reader,roomId,apply,reloadChanges,groupMode,workspace]);
  useEffect(()=>{let alive=true;if(!client){setGroupAvailable(false);if(groupMode)setGroupError('このグループのURLを確認してください。');return;}void client.rpc('jr_group_status',{}, {get:true}).then(({data,error})=>{if(alive)setGroupAvailable(!error&&data?.version===1);});if(groupMode)void client.rpc('jr_group_info',{}, {get:true}).then(({data,error})=>{if(!alive)return;if(error||!data?.name){setGroupError('グループを開けませんでした。共有されたURLと接続を確認してください。');return;}setGroupName(data.name);setGroupError('');});return()=>{alive=false;};},[client,groupMode]);
- function privateGroupURL(token:string,id?:string){const custom=config&&(config.url!==import.meta.env.VITE_SUPABASE_URL||config.key!==import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY)?config:undefined;return groupShareURL(token,id,custom);}
+ useEffect(()=>{if(!client||!config||!groupMode||!groupToken)return;let alive=true;void issueShortLink(config,groupToken,client).then(id=>{if(alive&&id){setShortId(id);if(shortRoute?.editorToken&&rememberEditor(config.url,id,groupToken))history.replaceState(null,'',shortGroupURL(id,roomId??undefined));}}).catch(()=>{});return()=>{alive=false;};},[client,config,groupMode,groupToken]);
+ async function authorizeGroup(token:string){if(!config||!shortId||!/^[a-f0-9]{64}$/.test(token))throw Error('編集キーを確認してください。');const result=await groupClient(config,token,shortId).rpc('jr_group_info',{}, {get:true});if(result.error||!result.data?.id)throw Error('編集キーを確認できませんでした。共有相手から受け取ったキーを確認してください。');rememberEditor(config.url,shortId,token);location.hash=shortGroupURL(shortId,roomId??undefined,token).split('#')[1];}
+ function privateGroupURL(token:string,id?:string){return groupShareURL(token,id);}
  async function createGroup(name:string){
   if(!client||!groupAvailable)throw Error('グループを作成できません。接続を確認してからお試しください。');
   const trimmed=name.trim();if(!trimmed||trimmed.length>60)throw Error('グループ名は1〜60文字で入力してください。');
@@ -89,7 +98,8 @@ export function useCloud(onState:(state:State)=>void,enabled=true,workspace=true
   }
   if(typeof data.room_id!=='string'||!/^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(data.room_id))throw Error('作成結果を確認できませんでした。同じ名前で再試行してください。（INVALID_GROUP_RESPONSE）');
   if(pending.initialName&&pending.nameRequest&&!pending.ready){await prepareGroupTournament(config!,pending.token,data.room_id,trimmed,pending.initialName,pending.nameRequest);pending.ready=true;try{sessionStorage.setItem(storageKey,JSON.stringify(pending));}catch{}}
-  const url=privateGroupURL(pending.token,data.room_id);
+  const alias=await issueShortLink(config!,pending.token);
+  const url=alias?shortGroupURL(alias,undefined,storedEditor(config!.url,alias)===pending.token?undefined:pending.token):privateGroupURL(pending.token,data.room_id);
   // Retain the identity so reopening the form or retrying after navigation recovers the same group.
   pendingGroup.current=pending;
   return url;
@@ -99,13 +109,14 @@ export function useCloud(onState:(state:State)=>void,enabled=true,workspace=true
   try{const pending=JSON.parse(localStorage.getItem(groupMode?'jr-group-pending:'+groupToken:'jr-public-pending')??'null');if(pending?.scope===scope&&pending?.digest===digest)return pending.id;const id=crypto.randomUUID();localStorage.setItem(groupMode?'jr-group-pending:'+groupToken:'jr-public-pending',JSON.stringify({scope,digest,id}));return id;}catch{return crypto.randomUUID();}
  }
  async function mutate(id:string,operation:PublicOperation){
-  if(!client)throw Error('NOT_CONNECTED');if(busy.current)throw Error('SAVING');busy.current=true;setSaving(true);const gen=generation.current;
+  if(readOnly)throw Error('READ_ONLY');if(!client)throw Error('NOT_CONNECTED');if(busy.current)throw Error('SAVING');busy.current=true;setSaving(true);const gen=generation.current;
   try{const req=await requestId(id,operation);const {data,error}=await client.rpc(groupRPC('jr_public_apply',groupMode),{target:id,request_id:req,device_id:device.current,operation});const next=unwrap<Room>(data,error);reader?.prime(next);reader?.invalidate();if(gen===generation.current)apply(next);try{localStorage.removeItem(groupMode?'jr-group-pending:'+groupToken:'jr-public-pending');}catch{};await Promise.allSettled([reloadRooms(),reloadChanges(id)]);return next;}
   catch(e){try{const latest=await fetchRoom(id);if(gen===generation.current)apply(latest);}catch{}throw e;}
   finally{busy.current=false;setSaving(false);}
  }
- async function saveRemote(next:State,base:State,original?:Game|null,targetGameId?:string){if(!roomId||!ref.current||ref.current.id!==roomId)throw Error('NOT_CONNECTED');const patch=stateChanges(base,next,original,targetGameId);if(!patch.length)return;await mutate(roomId,{changes:patch});}
+ async function saveRemote(next:State,base:State,original?:Game|null,targetGameId?:string){if(readOnly)throw Error('READ_ONLY');if(!roomId||!ref.current||ref.current.id!==roomId)throw Error('NOT_CONNECTED');const patch=stateChanges(base,next,original,targetGameId);if(!patch.length)return;await mutate(roomId,{changes:patch});}
  async function renameRoom(id:string,name:string){
+  if(readOnly)throw Error('READ_ONLY');
   const trimmed=name.trim();if(!trimmed||trimmed.length>60)throw Error('大会名は1〜60文字で入力してください。');
   const current=await fetchRoom(id);if(current.deleted_at)throw Error('ARCHIVED');
   const changes=stateChanges(current.state,{...current.state,name:trimmed});
@@ -113,9 +124,9 @@ export function useCloud(onState:(state:State)=>void,enabled=true,workspace=true
  }
  function selectRoom(id:string|null){if(busy.current)return;ref.current=null;setRoom(null);setRoomId(id);setMessage('');}
  function configure(next:CloudConfig){if(!validConfig(next))throw Error('Project URLと公開用Publishable keyを入力してください。Secret key・service_roleは使用できません。');localStorage.setItem('janroku-cloud-config',JSON.stringify(next));selectRoom(null);setConfig(next);setMessage('接続設定を保存しました。大会を選ぶか、新しく作成してください。');}
- async function createRoom(initial:State,autoNameDay?:string){if(!client||busy.current)throw Error('NOT_CONNECTED');busy.current=true;setSaving(true);try{if(autoNameDay&&reader){const key=stableJSON({project:config?.url,groupToken,initial:{...initial,name:''},autoNameDay});if(pendingTournament.current?.key===key)initial=pendingTournament.current.state;else{reader.invalidate();const index=await reader.index();const existing=await loadTournamentScores(index,id=>reader.room(id,index.find(row=>row.id===id)?.version),new Map(),null);initial={...initial,name:tournamentName(autoNameDay,existing.map(room=>room.state.name))};pendingTournament.current={key,state:initial};}}const normalized=sharingState(initial);const req=await requestId('create',normalized);const {data,error}=await client.rpc(groupRPC('jr_public_create',groupMode),{request_id:req,device_id:device.current,initial_state:normalized});const next=unwrap<Room>(data,error);reader?.prime(next);reader?.invalidate();await reloadRooms();try{localStorage.removeItem(groupMode?'jr-group-pending:'+groupToken:'jr-public-pending');}catch{}pendingTournament.current=null;return next;}finally{busy.current=false;setSaving(false);}}
- function shareURL(id?:string){if(groupMode)return groupToken?privateGroupURL(groupToken,id):location.origin+location.pathname; const url=new URL(location.origin+location.pathname);const p=new URLSearchParams();if(config){p.set('project',config.url);p.set('key',config.key);}if(id)p.set('room',id);url.hash=p.toString();return url.href;}
- return {groupMode,groupName,groupError,groupAvailable,createGroup,config,client,roomId,room,rooms,changes,status,message,setMessage,saving,loading,active:!!roomId,configure,selectRoom,saveRemote,renameRoom,createRoom,shareURL,reloadRooms,reloadChanges,latest:()=>ref.current,
+ async function createRoom(initial:State,autoNameDay?:string){if(readOnly)throw Error('READ_ONLY');if(!client||busy.current)throw Error('NOT_CONNECTED');busy.current=true;setSaving(true);try{if(autoNameDay&&reader){const key=stableJSON({project:config?.url,groupToken,initial:{...initial,name:''},autoNameDay});if(pendingTournament.current?.key===key)initial=pendingTournament.current.state;else{reader.invalidate();const index=await reader.index();const existing=await loadTournamentScores(index,id=>reader.room(id,index.find(row=>row.id===id)?.version),new Map(),null);initial={...initial,name:tournamentName(autoNameDay,existing.map(room=>room.state.name))};pendingTournament.current={key,state:initial};}}const normalized=sharingState(initial);const req=await requestId('create',normalized);const {data,error}=await client.rpc(groupRPC('jr_public_create',groupMode),{request_id:req,device_id:device.current,initial_state:normalized});const next=unwrap<Room>(data,error);reader?.prime(next);reader?.invalidate();await reloadRooms();try{localStorage.removeItem(groupMode?'jr-group-pending:'+groupToken:'jr-public-pending');}catch{}pendingTournament.current=null;return next;}finally{busy.current=false;setSaving(false);}}
+ function shareURL(id?:string){if(groupMode)return shortId?shortGroupURL(shortId,id):groupToken?privateGroupURL(groupToken,id):location.origin+location.pathname; const url=new URL(location.origin+location.pathname);const p=new URLSearchParams();if(config){p.set('project',config.url);p.set('key',config.key);}if(id)p.set('room',id);url.hash=p.toString();return url.href;}
+ return {readOnly,shortId,authorizeGroup,editorShareURL:(id?:string)=>groupToken?(shortId?shortGroupURL(shortId,id,groupToken):privateGroupURL(groupToken,id)):null,groupMode,groupName,groupError,groupAvailable,createGroup,config,client,roomId,room,rooms,changes,status,message,setMessage,saving,loading,active:!!roomId,configure,selectRoom,saveRemote,renameRoom,createRoom,shareURL,reloadRooms,reloadChanges,latest:()=>ref.current,
   restore:async(changeId:string)=>{if(!roomId)throw Error('NOT_CONNECTED');return mutate(roomId,{restore:changeId});},
   archive:async(item:RoomSummary)=>mutate(item.id,{changes:[{kind:'archive',id:item.id,before:{deleted_at:item.deleted_at},after:{deleted_at:'archive'}}]}),
   restoreRoom:async(id:string)=>{const list=await reloadChanges(id);const log=list.find(c=>c.kind==='archive'&&(c.after_data as {deleted_at?:string})?.deleted_at);if(!log)throw Error('NOT_FOUND');return mutate(id,{restore:log.id});}

@@ -52,6 +52,15 @@ async function main(){
   for(const extraHeaders of [{},{'x-janroku-group':'0'.repeat(64)}]){let response;try{response=await fetch(root+'rpc/jr_group_info',{headers:{apikey:key,...extraHeaders},signal:AbortSignal.timeout(15000),redirect:'error'});}catch{fail('Group access probe failed (details withheld).');}if(![401,403].includes(response.status))fail('Group info must deny missing/unknown capabilities.');}
   console.log('Group API deployed: missing/unknown capabilities are denied. No group was created or modified.');
  }
+ const linksStatus=await get('rpc/jr_group_links_status');
+ if(linksStatus.status===404)console.log('Short URL/admin migration is not applied: legacy URLs remain available; admin access stays closed.');
+ else{
+  if(!linksStatus.ok||(await linksStatus.json()).version!==1)fail('Short URL API version check failed.');
+  for(const name of ['jr_admin_stats','jr_admin_groups']){const response=await get('rpc/'+name);if(![401,403].includes(response.status))fail('Anonymous admin access is not denied.');}
+  let response;try{response=await fetch(root+'rpc/jr_group_info',{headers:{apikey:key,'x-janroku-view':'0'.repeat(16)},signal:AbortSignal.timeout(15000),redirect:'error'});}catch{fail('Short URL access probe failed (details withheld).');}
+  if(![401,403].includes(response.status))fail('Unknown short IDs must be denied.');
+  console.log('Short URL/admin APIs deployed: unknown links and anonymous management requests denied. No production writes performed.');
+ }
  console.log('Release check passed: source/build key scan and GET-only anonymous Supabase access checks ('+rooms.length+' public tournaments).');
  console.log('RLS/ACL definitions are verified separately by in-memory database tests; production catalogs are not inspected.');
 }
