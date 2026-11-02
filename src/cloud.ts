@@ -125,4 +125,5 @@ export type CloudConnection=ReturnType<typeof useCloud>&{
  /** Browser-only adapter snapshot: aggregate locally without polling or remote caches. */
  localRooms?:Room[];
  resetSample?:()=>void;
+ prepareSampleScore?:(day:string)=>{room:Room;created:boolean};
 };
