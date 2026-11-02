@@ -3,7 +3,6 @@ import {useEffect,useMemo,useRef,useState} from 'react';
 import type {CloudChange,CloudConnection,Room} from './cloud';
 import {freshSample,loadSample,saveSample,type SampleStore} from './sample';
 import type {State} from './domain';
-import {cloudReader} from './cloud-reader';
 
 /** Storage adapter for the existing UI. This client has no network implementation. */
 export function useSampleCloud(onState:(state:State)=>void,enabled:boolean):CloudConnection{
@@ -13,7 +12,7 @@ export function useSampleCloud(onState:(state:State)=>void,enabled:boolean):Clou
  const logs=useRef(new Map<string,{log:CloudChange;before:Room}>());
  const room=store.rooms.find(r=>r.id===store.selected)!;
  useEffect(()=>{if(enabled)onState(room.state);},[enabled,room,onState]);
- function commit(next:SampleStore){saveSample(next);current.current=next;setStore(next);cloudReader(client,true).invalidate();for(const room of next.rooms)cloudReader(client,true).prime(room);}
+ function commit(next:SampleStore){if(initial.error)throw Error(initial.error);saveSample(next);current.current=next;setStore(next);}
  async function update(id:string,state:State,deleted_at?:string|null){const before=current.current.rooms.find(r=>r.id===id);if(!before)throw Error('NOT_FOUND');const date=new Date().toISOString(),next={...before,state,version:before.version+1,updated_at:date,deleted_at:deleted_at===undefined?before.deleted_at:deleted_at};const log:CloudChange={id:crypto.randomUUID(),room_id:id,version:next.version,kind:deleted_at!==undefined?'archive':'settings',entity_id:id,before_data:{deleted_at:before.deleted_at},after_data:{deleted_at:next.deleted_at},created_at:date,restored_from:null};commit({...current.current,rooms:current.current.rooms.map(r=>r.id===id?next:r)});logs.current.set(log.id,{log,before});return next;}
  const client=useMemo(()=>({rpc:async(name:string,args?:{target?:string;page_offset?:number;page_size?:number})=>{
   const rooms=current.current.rooms;
@@ -22,7 +21,7 @@ export function useSampleCloud(onState:(state:State)=>void,enabled:boolean):Clou
   throw Error('Sample adapter does not support network operations');
  }}) as unknown as NonNullable<CloudConnection['client']>,[]);
  const changes=[...logs.current.values()].filter(item=>item.log.room_id===room.id).map(item=>item.log).reverse();
- return {groupMode:true,groupName:'サンプルの雀録',groupError:'',groupAvailable:false,createGroup:async()=>{throw Error('トップページから本物のグループを作成してください。');},config:{url:'',key:''},client:enabled?client:null,roomId:room.id,room,rooms:store.rooms.map(r=>({id:r.id,name:r.state.name,players:r.state.players.length,games:r.state.games.length,version:r.version,updated_at:r.updated_at,deleted_at:r.deleted_at})),changes,status:'サンプル・ブラウザ内保存',message,setMessage,saving:false,loading:false,active:true,
+ return {localRooms:enabled?store.rooms:undefined,resetSample:()=>{const next=freshSample();saveSample(next);current.current=next;setStore(next);logs.current.clear();setMessage('');},groupMode:true,groupName:'サンプルの雀録',groupError:'',groupAvailable:false,createGroup:async()=>{throw Error('トップページから本物のグループを作成してください。');},config:{url:'',key:''},client:enabled?client:null,roomId:room.id,room,rooms:store.rooms.map(r=>({id:r.id,name:r.state.name,players:r.state.players.length,games:r.state.games.length,version:r.version,updated_at:r.updated_at,deleted_at:r.deleted_at})),changes,status:'サンプル・ブラウザ内保存',message,setMessage,saving:false,loading:false,active:true,
   configure:()=>{throw Error('Sample cannot connect to Supabase');},selectRoom:id=>{if(id&&current.current.rooms.some(r=>r.id===id))commit({...current.current,selected:id});},
   saveRemote:async next=>{if(initial.error)throw Error(initial.error);await update(current.current.selected,next);},renameRoom:async(id,name)=>{const r=current.current.rooms.find(r=>r.id===id)!;await update(id,{...r.state,name:name.trim()});},
   createRoom:async(state:State,autoNameDay?:string)=>{if(autoNameDay)state={...state,name:tournamentName(autoNameDay,current.current.rooms.map(room=>room.state.name))};const next:Room={id:crypto.randomUUID(),state,version:1,updated_at:new Date().toISOString(),deleted_at:null};commit({...current.current,rooms:[...current.current.rooms,next]});return next;},

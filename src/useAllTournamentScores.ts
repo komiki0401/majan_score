@@ -5,6 +5,8 @@ import {cloudReader} from './cloud-reader';
 import {visibleSync} from './visible-sync';
 import {type State} from './domain';
 export function useAllTournamentScores(cloud:CloudConnection,enabled:boolean){
+ const local=cloud.localRooms;
+ const localResult=useMemo(()=>local?{rooms:local,state:allTournamentState(local),recent:recentTournament(local),count:local.filter(room=>!room.deleted_at).length}:null,[local]);
  const [result,setResult]=useState<{project:unknown;state:State|null;count:number;recent:Room|null;rooms:Room[]}>({project:null,state:null,count:0,recent:null,rooms:[]});
  const [loading,setLoading]=useState(false),[error,setError]=useState(''),[retry,setRetry]=useState(0);
  const cache=useMemo(()=>new Map<string,CachedTournament>(),[cloud.client]);
@@ -12,7 +14,7 @@ export function useAllTournamentScores(cloud:CloudConnection,enabled:boolean){
  const latest=useRef(cloud);latest.current=cloud;
  const current=(cloud.room?`${cloud.room.id}:${cloud.room.version}:${cloud.room.deleted_at??''}`:'')+JSON.stringify(cloud.rooms.map(room=>[room.id,room.version,room.deleted_at]));
  useEffect(()=>{
-  if(!enabled||!cloud.client)return;
+  if(local||!enabled||!cloud.client)return;
   let alive=true;const project=cloud.client;if(resultProject.current!==project){signature.current='';resultProject.current=project;setLoading(true);}
   const reader=cloudReader(project,!!cloud.groupMode);
   let lastIndex:unknown;
@@ -25,6 +27,6 @@ export function useAllTournamentScores(cloud:CloudConnection,enabled:boolean){
    if(alive){if(signature.current!==next){signature.current=next;setResult({project,state:allTournamentState(rooms),count:rooms.filter(room=>!room.deleted_at).length,recent:recentTournament(rooms),rooms});}lastIndex=index;setError('');}
   }catch(e){if(alive)setError(cloudMessage(e));}finally{if(alive)setLoading(false);}});
   return ()=>{alive=false;control.stop();};
- },[enabled,cloud.client,cloud.groupMode,current,cache,retry]);
- return {rooms:result.project===cloud.client?result.rooms:[],recent:result.project===cloud.client?result.recent:null,state:result.project===cloud.client?result.state:null,count:result.project===cloud.client?result.count:0,loading,error,reload:useCallback(()=>{if(cloud.client)cloudReader(cloud.client,!!cloud.groupMode).invalidate();setRetry(x=>x+1);},[cloud.client,cloud.groupMode])};
+ },[local,enabled,cloud.client,cloud.groupMode,current,cache,retry]);
+ return {rooms:localResult?.rooms??(result.project===cloud.client?result.rooms:[]),recent:localResult?localResult.recent:result.project===cloud.client?result.recent:null,state:localResult?localResult.state:result.project===cloud.client?result.state:null,count:localResult?localResult.count:result.project===cloud.client?result.count:0,loading:localResult?false:loading,error:localResult?'':error,reload:useCallback(()=>{if(local)return;if(cloud.client)cloudReader(cloud.client,!!cloud.groupMode).invalidate();setRetry(x=>x+1);},[local,cloud.client,cloud.groupMode])};
 }

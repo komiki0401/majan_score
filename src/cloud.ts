@@ -121,4 +121,8 @@ export function useCloud(onState:(state:State)=>void,enabled=true,workspace=true
   restoreRoom:async(id:string)=>{const list=await reloadChanges(id);const log=list.find(c=>c.kind==='archive'&&(c.after_data as {deleted_at?:string})?.deleted_at);if(!log)throw Error('NOT_FOUND');return mutate(id,{restore:log.id});}
  };
 }
-export type CloudConnection=ReturnType<typeof useCloud>;
+export type CloudConnection=ReturnType<typeof useCloud>&{
+ /** Browser-only adapter snapshot: aggregate locally without polling or remote caches. */
+ localRooms?:Room[];
+ resetSample?:()=>void;
+};
