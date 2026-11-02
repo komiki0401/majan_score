@@ -31,6 +31,18 @@ function assertHistory(state:State){
  expect(host.querySelectorAll('.point-chart circle')).toHaveLength(state.games.reduce((sum,game)=>sum+game.rows.length,0));
 }
 async function remountSample(){await act(async()=>root.unmount());root=createRoot(host);await act(async()=>root.render(<App sample/>));}
+it('keeps score entry available after every sample tournament is archived and can start a new tournament',async()=>{
+ const network=vi.spyOn(globalThis,'fetch').mockRejectedValue(Error('No production access'));vi.spyOn(window,'confirm').mockReturnValue(true);
+ await act(async()=>root.render(<App sample/>));await click(button('大会管理'));await click(host.querySelector('.tournament-list-disclosure summary')!);
+ while(host.querySelector('.room-card .danger'))await click(host.querySelector('.room-card .danger')!);
+ const archived=loadSample().rooms;expect(archived.every(room=>room.deleted_at)).toBe(true);
+ await click(button('スコア入力＋'));expect(host.querySelector('.breadcrumb strong')?.textContent).toBe('スコア入力');expect(host.querySelector('[aria-label="新しい大会名"]')).not.toBeNull();
+ await remountSample();await click(button('スコア入力＋'));expect(host.querySelector('.breadcrumb strong')?.textContent).toBe('スコア入力');
+ await input(host.querySelector('[aria-label="新しい大会名"]')!,'再開の大会');await click(button('大会を作成'));expect(host.querySelector('.score-tournament strong')?.textContent).toBe('再開の大会');
+ await click(button('参加者を登録'));for(const name of ['東さん','南さん','西さん','北さん']){await input(host.querySelector('[aria-label="参加者名"]')!,name);await click(button('追加',host.querySelector('.add-player')!));}
+ await click(button('スコア入力＋'));await click(button('計算結果を確認'));await click(button('この結果を保存'));expect(loadSample().rooms.at(-1)?.state.games).toHaveLength(1);assertDashboard(loadSample().rooms.at(-1)!.state);
+ expect(loadSample().rooms.slice(0,2)).toEqual(archived);expect(network).not.toHaveBeenCalled();expect(createClient).not.toHaveBeenCalled();
+});
 it('immediately shows a scored sample tournament on the dashboard before the seed timestamp',async()=>{
  vi.useFakeTimers({toFake:['Date']});vi.setSystemTime(new Date('2026-11-02T00:00:00Z'));
  try{await act(async()=>root.render(<App sample/>));await click(button('スコア入力＋'));
