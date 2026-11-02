@@ -41,14 +41,14 @@ it('keeps score entry available after every sample tournament is archived and ca
  await input(host.querySelector('[aria-label="新しい大会名"]')!,'再開の大会');await click(button('大会を作成'));expect(host.querySelector('.score-tournament strong')?.textContent).toBe('再開の大会');
  await click(button('参加者を登録'));for(const name of ['東さん','南さん','西さん','北さん']){await input(host.querySelector('[aria-label="参加者名"]')!,name);await click(button('追加',host.querySelector('.add-player')!));}
  await click(button('スコア入力＋'));await click(button('計算結果を確認'));await click(button('この結果を保存'));expect(loadSample().rooms.at(-1)?.state.games).toHaveLength(1);assertDashboard(loadSample().rooms.at(-1)!.state);
- expect(loadSample().rooms.slice(0,2)).toEqual(archived);expect(network).not.toHaveBeenCalled();expect(createClient).not.toHaveBeenCalled();
+ expect(loadSample().rooms.slice(0,archived.length)).toEqual(archived);expect(network).not.toHaveBeenCalled();expect(createClient).not.toHaveBeenCalled();
 });
 it('immediately shows a scored sample tournament on the dashboard before the seed timestamp',async()=>{
  vi.useFakeTimers({toFake:['Date']});vi.setSystemTime(new Date('2026-11-02T00:00:00Z'));
  try{await act(async()=>root.render(<App sample/>));await click(button('スコア入力＋'));
   for(const [i,score] of [80000,10000,5000,5000].entries())await input(host.querySelector(`[aria-label="${i+1}人目の持ち点"]`)!,String(score));
   await click(button('計算結果を確認'));await click(button('この結果を保存'));
-  expect(host.querySelector('.stats-grid .stat-value')?.textContent).toBe('9半荘');
+  expect(host.querySelector('.stats-grid .stat-value')?.textContent).toBe('2半荘');
   const expected=standings(loadSample().rooms[0].state);for(const player of expected){const row=[...host.querySelectorAll('.rank-row')].find(row=>row.querySelector('.player-cell b')?.textContent===player.name)!;expect(Number(row.querySelector('strong')?.textContent?.replace('pt','').trim())).toBe(player.total);}
  }finally{vi.useRealTimers();}
 });
@@ -57,7 +57,7 @@ it('reflects sample add, edit and delete in every aggregate immediately and afte
  const network=vi.spyOn(globalThis,'fetch').mockRejectedValue(Error('Network forbidden'));
  const canaries={'janroku-v1':'keep-local-records','janroku-cloud-config':JSON.stringify({url:'https://real.supabase.co',key:'sb_publishable_test'}),'jr-group-pending:real':'keep-group-draft'};
  for(const [key,value] of Object.entries(canaries))localStorage.setItem(key,value);
- const original=freshSample();saveSample(original);
+ const original=freshSample();const another=structuredClone(original.rooms[0]);another.id='sample-room-1';another.state.name='別の大会';another.state.games=another.state.games.map(game=>({...game,id:'sample-game-1-0'}));original.rooms.push(another);saveSample(original);
  try{
   await act(async()=>root.render(<App sample/>));await click(button('スコア入力＋'));
   const ids=[1,2,3,4].map(i=>host.querySelector<HTMLSelectElement>(`[aria-label="${i}人目の参加者"]`)!.value),scores=[80000,10000,5000,5000];
@@ -72,7 +72,7 @@ it('reflects sample add, edit and delete in every aggregate immediately and afte
   expect([...host.querySelectorAll('.distribution>b')].map(node=>node.textContent)).toEqual(leader.ranks.map(count=>count+' 回'));
   await click(host.querySelector('.modal [aria-label="閉じる"]')!);
   await click(button('対局履歴'));assertHistory(allTournamentState(loadSample().rooms));
-  const card=()=>[...host.querySelectorAll('.history-card')].find(node=>node.querySelector('.history-title b')?.textContent?.includes('第'+added.round+'半荘'))!;
+  const card=()=>[...host.querySelectorAll('.history-card')].find(node=>node.querySelector('.history-title b')?.textContent?.includes(original.rooms[0].state.name)&&node.querySelector('.history-title small')?.textContent===added.playedOn!.split('-').map((value,i)=>Number(value)+['年','月','日'][i]).join(''))!;
   await click(button('編集',card()));const editedScores=[5000,5000,10000,80000];
   for(const [i,score] of editedScores.entries())await input(host.querySelector(`[aria-label="${i+1}人目の持ち点"]`)!,String(score));
   await click(button('計算結果を確認'));await click(button('この結果を保存'));
@@ -93,14 +93,14 @@ it('reflects sample add, edit and delete in every aggregate immediately and afte
 });
 it('repairs only the untouched old seed timestamp while retaining saved scores and storage bytes',()=>{
  vi.useFakeTimers({toFake:['Date']});vi.setSystemTime(new Date('2026-11-02T00:00:00Z'));
- try{const store=freshSample();const untouched=store.rooms[1];untouched.updated_at=untouched.state.games[0].playedOn+'T12:00:00.000Z';untouched.state.games=untouched.state.games.map(game=>({...game,date:untouched.updated_at}));
+ try{const store=freshSample();const seedDay='2026-11-02';store.rooms=[0,1].map(index=>{const room=structuredClone(store.rooms[0]);room.id='sample-room-'+index;room.state.games=Array.from({length:index?4:8},(_,i)=>({...structuredClone(room.state.games[0]),id:'sample-game-'+index+'-'+i,round:i+1,playedOn:seedDay,date:seedDay+'T12:00:00.000Z'}));room.updated_at=seedDay+'T12:00:00.000Z';return room;});const untouched=store.rooms[1];untouched.updated_at=untouched.state.games[0].playedOn+'T12:00:00.000Z';untouched.state.games=untouched.state.games.map(game=>({...game,date:untouched.updated_at}));
   store.rooms[0]={...store.rooms[0],version:2,updated_at:new Date().toISOString()};store.rooms[0].state.name='編集済みの大会';saveSample(store);const raw=localStorage.getItem(SAMPLE_KEY);
   const loaded=loadSample();expect(loaded.rooms[0]).toEqual(store.rooms[0]);expect(loaded.rooms[1].state).toEqual(untouched.state);expect(Date.parse(loaded.rooms[1].updated_at)).toBeLessThan(Date.now());expect(recentTournament(loaded.rooms)?.id).toBe(store.rooms[0].id);expect(localStorage.getItem(SAMPLE_KEY)).toBe(raw);
  }finally{vi.useRealTimers();}
 });
 it('recovers from damaged sample storage with an explicit reset and allows saving again',async()=>{
  localStorage.setItem(SAMPLE_KEY,'broken');vi.spyOn(window,'confirm').mockReturnValue(true);await act(async()=>root.render(<App sample/>));expect(host.textContent).toContain('サンプルの保存データを読み込めません');
- await click(button('サンプルデータをリセット'));expect(host.textContent).not.toContain('サンプルの保存データを読み込めません');await click(button('スコア入力＋'));await click(button('計算結果を確認'));await click(button('この結果を保存'));expect(loadSample().rooms[0].state.games).toHaveLength(9);
+ await click(button('サンプルデータをリセット'));expect(host.textContent).not.toContain('サンプルの保存データを読み込めません');await click(button('スコア入力＋'));await click(button('計算結果を確認'));await click(button('この結果を保存'));expect(loadSample().rooms[0].state.games).toHaveLength(2);
 });
 it('reuses the full score UI, saves and edits sample results locally, and leaves legacy storage/network untouched',async()=>{
  const legacy='legacy-data-must-survive';localStorage.setItem('janroku-v1',legacy);localStorage.setItem('janroku-local-history',legacy);
@@ -108,9 +108,9 @@ it('reuses the full score UI, saves and edits sample results locally, and leaves
  await act(async()=>root.render(<App sample/>));
  expect(host.querySelector('.sample-banner')?.textContent).toContain('サンプル体験中');expect(host.querySelector('.ranking-panel')).not.toBeNull();
  expect(host.querySelector('.dashboard-home-link a')?.getAttribute('href')).toBe('#');
- await click(button('対局履歴'));expect(host.querySelectorAll('.history-card')).toHaveLength(12);expect(host.querySelector('.progress-panel')).not.toBeNull();
+ await click(button('対局履歴'));expect(host.querySelectorAll('.history-card')).toHaveLength(1);expect(host.querySelector('.progress-panel')).not.toBeNull();
  await click(button('スコア入力＋'));await click(button('計算結果を確認'));await click(button('この結果を保存'));
- expect(loadSample().rooms[0].state.games).toHaveLength(9);
+ expect(loadSample().rooms[0].state.games).toHaveLength(2);
  await click(button('対局履歴'));await click(button('編集',host.querySelector('.history-card')!));expect(host.querySelector('.score-panel h2')?.textContent).toBe('対局結果を編集');
  await click(button('計算結果を確認'));await click(button('この結果を保存'));expect(loadSample().rooms.flatMap(r=>r.state.games).flatMap(g=>g.revisions)).toHaveLength(1);
  await click(button('設定'));expect(host.querySelector('[aria-label="Supabase Project URL"]')).toBeNull();
@@ -120,14 +120,14 @@ it('reuses the full score UI, saves and edits sample results locally, and leaves
 it('resets only sample records and preserves existing local records and connection settings',()=>{
  localStorage.setItem('janroku-v1','keep-real-data');localStorage.setItem('janroku-cloud-config','keep-connection');
  const edited=freshSample();edited.rooms[0].state.name='変更済み';edited.rooms[0].state.games=[];saveSample(edited);
- saveSample(freshSample());expect(loadSample().rooms[0].state.name).toBe('週末のなかよし卓');expect(loadSample().rooms[0].state.games).toHaveLength(8);
+ saveSample(freshSample());expect(loadSample().rooms[0].state.name).toBe(freshSample().rooms[0].state.name);expect(loadSample().rooms[0].state.games).toHaveLength(1);
  expect(localStorage.getItem('janroku-v1')).toBe('keep-real-data');expect(localStorage.getItem('janroku-cloud-config')).toBe('keep-connection');
 });
 it('creates a sample tournament in local storage and reloads the selected tournament',async()=>{
  await act(async()=>root.render(<App sample/>));await click(button('大会管理'));
  await click(host.querySelector('.tournament-list-disclosure summary')!);
  await input(host.querySelector('[aria-label="新しい大会名"]')!,'おためし大会');await click(button('大会を作成'));
- const saved=loadSample();expect(saved.rooms).toHaveLength(3);expect(saved.rooms.find(r=>r.id===saved.selected)?.state.name).toBe('おためし大会');expect(host.querySelector('.score-tournament strong')?.textContent).toBe('おためし大会');
+ const saved=loadSample();expect(saved.rooms).toHaveLength(2);expect(saved.rooms.find(r=>r.id===saved.selected)?.state.name).toBe('おためし大会');expect(host.querySelector('.score-tournament strong')?.textContent).toBe('おためし大会');
  expect(localStorage.getItem('janroku-v1')).toBeNull();expect(createClient).not.toHaveBeenCalled();
 });
 it('opens the participant input for the score tournament without changing any records',async()=>{
@@ -135,6 +135,7 @@ it('opens the participant input for the score tournament without changing any re
  expect(button('参加者を追加する').compareDocumentPosition(button('計算結果を確認'))&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();await click(button('参加者を追加する'));expect(host.querySelector('h1')?.textContent).toBe('大会管理');expect(document.activeElement).toBe(host.querySelector('[aria-label="参加者名"]'));expect(host.querySelector<HTMLSelectElement>('[aria-label="参加者を管理する大会"]')?.value).toBe('sample-room-0');expect(localStorage.getItem(SAMPLE_KEY)).toBe(before);
 });
 it('updates a new tournament name with its date, preserves manual edits and carries the date into score entry',async()=>{
+ const existing=freshSample();existing.rooms[0].state.name='既存の大会';saveSample(existing);
  await act(async()=>root.render(<App sample/>));await click(button('大会管理'));await click(host.querySelector('.tournament-list-disclosure summary')!);
  const date=host.querySelector<HTMLInputElement>('[aria-label="新しい大会の対局日"]')!,name=host.querySelector<HTMLInputElement>('[aria-label="新しい大会名"]')!;
  await input(date,'2026-11-01');expect(name.value).toBe('2026/11/01（日）麻雀会');await input(date,'2026-11-02');expect(name.value).toBe('2026/11/02（月）麻雀会');
@@ -143,21 +144,33 @@ it('updates a new tournament name with its date, preserves manual edits and carr
  await input(host.querySelector('[aria-label="対局日"]')!,'2026-11-04');expect(host.querySelector<HTMLInputElement>('[aria-label="スコア入力の大会名"]')?.value).toBe('仲間の大会');
 });
 it('auto-names a new empty tournament in score entry until manually edited, without changing stored names before save',async()=>{
+ const existing=freshSample();existing.rooms[0].state.name='既存の大会';saveSample(existing);
  await act(async()=>root.render(<App sample/>));await click(button('大会管理'));await click(host.querySelector('.tournament-list-disclosure summary')!);await input(host.querySelector('[aria-label="新しい大会の対局日"]')!,'2026-11-01');await click(button('大会を作成'));
  await input(host.querySelector('[aria-label="対局日"]')!,'2026-11-02');expect(host.querySelector<HTMLInputElement>('[aria-label="スコア入力の大会名"]')?.value).toBe('2026/11/02（月）麻雀会');
  const saved=loadSample();expect(saved.rooms.find(r=>r.id===saved.selected)?.state.name).toBe('2026/11/01（日）麻雀会');
  await input(host.querySelector('[aria-label="スコア入力の大会名"]')!,'手動の名前');await input(host.querySelector('[aria-label="対局日"]')!,'2026-11-03');expect(host.querySelector<HTMLInputElement>('[aria-label="スコア入力の大会名"]')?.value).toBe('手動の名前');
 });
 it('preserves existing tournament names on date changes and saves an explicit name edit with the score',async()=>{
- await act(async()=>root.render(<App sample/>));await click(button('スコア入力＋'));await input(host.querySelector('[aria-label="対局日"]')!,'2026-11-02');expect(host.querySelector<HTMLInputElement>('[aria-label="スコア入力の大会名"]')?.value).toBe('週末のなかよし卓');
+ await act(async()=>root.render(<App sample/>));await click(button('スコア入力＋'));await input(host.querySelector('[aria-label="対局日"]')!,'2026-11-02');expect(host.querySelector<HTMLInputElement>('[aria-label="スコア入力の大会名"]')?.value).toBe(freshSample().rooms[0].state.name);
  await input(host.querySelector('[aria-label="スコア入力の大会名"]')!,'手動で編集した大会');await click(button('計算結果を確認'));expect(host.querySelector('.confirm-tournament strong')?.textContent).toBe('手動で編集した大会');await click(button('この結果を保存'));expect(loadSample().rooms[0].state.name).toBe('手動で編集した大会');
 });
 it('uses a circled suffix when another tournament on the same day is created',async()=>{
  const store=freshSample();store.rooms[0].state.name=tournamentName('2026-11-01');saveSample(store);await act(async()=>root.render(<App sample/>));await click(button('大会管理'));await click(host.querySelector('.tournament-list-disclosure summary')!);await input(host.querySelector('[aria-label="新しい大会の対局日"]')!,'2026-11-01');expect(host.querySelector<HTMLInputElement>('[aria-label="新しい大会名"]')?.value).toBe('2026/11/01（日）麻雀会②');await click(button('大会を作成'));expect(loadSample().rooms.at(-1)?.state.name).toBe('2026/11/01（日）麻雀会②');expect(loadSample().rooms[0].state.name).toBe(store.rooms[0].state.name);
 });
 it('initializes fictional data without writing storage and rejects damaged data rather than overwriting it',()=>{
- const sample=freshSample();expect(sample.rooms.flatMap(r=>r.state.games)).toHaveLength(12);expect(localStorage.getItem(SAMPLE_KEY)).toBeNull();
+ const sample=freshSample();expect(sample.rooms.flatMap(r=>r.state.games)).toHaveLength(1);expect(localStorage.getItem(SAMPLE_KEY)).toBeNull();
  localStorage.setItem(SAMPLE_KEY,'broken');expect(()=>loadSample()).toThrow();expect(localStorage.getItem(SAMPLE_KEY)).toBe('broken');
+});
+it.each([
+ ['2026-11-02T00:01:00','2026-11-01','2026/11/01（日）麻雀会'],
+ ['2027-01-01T09:00:00','2026-12-31','2026/12/31（木）麻雀会'],
+ ['2026-03-01T09:00:00','2026-02-28','2026/02/28（土）麻雀会'],
+ ['2024-03-01T09:00:00','2024-02-29','2024/02/29（木）麻雀会'],
+])('seeds one game and four players on the previous local calendar day: %s',(date,day,name)=>{
+ const now=new Date(date),sample=freshSample(now);expect(sample.rooms).toHaveLength(1);const room=sample.rooms[0];
+ expect(room.state.name).toBe(name);expect(room.state.players).toHaveLength(4);expect(room.state.games).toHaveLength(1);const game=room.state.games[0];
+ expect(game.playedOn).toBe(day);expect(game.rows).toHaveLength(4);expect(new Set(game.rows.map(row=>row.playerId)).size).toBe(4);expect(game.round).toBe(1);expect(Date.parse(game.date)).toBeLessThan(now.getTime());
+ expect(game.rows).toEqual(calculate(room.state.players.map((player,i)=>({playerId:player.id,score:[42000,28000,19000,11000][i]})),room.state.rules));expect(localStorage.getItem(SAMPLE_KEY)).toBeNull();
 });
 it('offers the two landing actions without polling existing tournament data',async()=>{
  location.hash='';vi.useFakeTimers();

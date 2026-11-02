@@ -1,20 +1,15 @@
 import {calculate,defaultRules,emptyState,localDay,type State} from './domain';
 import type {Room} from './cloud';
+import {tournamentName} from './tournament-name';
 export const SAMPLE_KEY='janroku-sample-v1';
 export type SampleStore={version:1;selected:string;rooms:Room[]};
 export function freshSample(now=new Date()):SampleStore{
- const players=['こはる','そうた','みどり','はる','あおい'].map((name,i)=>({id:'sample-player-'+i,name}));
- const today=localDay(now);
- const rooms=['週末のなかよし卓','月あかり麻雀会'].map((name,r)=>{
-  const games=Array.from({length:r?4:8},(_,i)=>{
-   const ids=Array.from({length:4},(_,seat)=>players[(seat+i)%players.length].id);
-   const scores=[[42000,28000,19000,11000],[18000,36000,31000,15000],[25000,12000,47000,16000],[8000,27000,22000,43000]][i%4];
-   const date=new Date(now.getTime()-(r*20+(r?4:8)-i)*60000).toISOString();
-   return {id:`sample-game-${r}-${i}`,table:'1',round:i+1,date,playedOn:today,rows:calculate(ids.map((playerId,j)=>({playerId,score:scores[j]})),defaultRules),rules:structuredClone(defaultRules),inputMode:'score' as const,revisions:[]};
-  });
-  return {id:'sample-room-'+r,state:{...structuredClone(emptyState),name,players:structuredClone(players),games},version:1,deleted_at:null,updated_at:games.at(-1)!.date};
- });
- return {version:1,selected:rooms[0].id,rooms};
+ const players=['こはる','そうた','みどり','はる'].map((name,i)=>({id:'sample-player-'+i,name}));
+ const previous=new Date(now);previous.setDate(previous.getDate()-1);
+ const day=localDay(previous),date=previous.toISOString(),scores=[42000,28000,19000,11000];
+ const game={id:'sample-game-0-0',table:'1',round:1,date,playedOn:day,rows:calculate(players.map((player,i)=>({playerId:player.id,score:scores[i]})),defaultRules),rules:structuredClone(defaultRules),inputMode:'score' as const,revisions:[]};
+ const room:Room={id:'sample-room-0',state:{...structuredClone(emptyState),name:tournamentName(day),players,games:[game]},version:1,deleted_at:null,updated_at:date};
+ return {version:1,selected:room.id,rooms:[room]};
 }
 export function loadSample():SampleStore{
  const raw=localStorage.getItem(SAMPLE_KEY);if(!raw)return freshSample();
