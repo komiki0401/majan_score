@@ -61,6 +61,14 @@ async function main(){
   if(![401,403].includes(response.status))fail('Unknown short IDs must be denied.');
   console.log('Short URL/admin APIs deployed: unknown links and anonymous management requests denied. No production writes performed.');
  }
+ const lifecycleStatus=await get('rpc/jr_admin_lifecycle_status');
+ if(lifecycleStatus.status===404)console.log('Group lifecycle migration is not applied: management operations require manual SQL setup.');
+ else{
+  if(!lifecycleStatus.ok||(await lifecycleStatus.json()).version!==1)fail('Group lifecycle version check failed.');
+  const preview=await get('rpc/jr_admin_group_preview?target=00000000-0000-4000-8000-000000000000');
+  if(![401,403].includes(preview.status))fail('Anonymous deletion-preview access is not denied.');
+  console.log('Lifecycle preview denies anonymous access. Mutating RPCs are tested only in memory.');
+ }
  console.log('Release check passed: source/build key scan and GET-only anonymous Supabase access checks ('+rooms.length+' public tournaments).');
  console.log('RLS/ACL definitions are verified separately by in-memory database tests; production catalogs are not inspected.');
 }

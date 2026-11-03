@@ -14,6 +14,7 @@ export type CloudConfig={url:string;key:string};
 export type Room={id:string;state:State;version:number;updated_at:string;deleted_at:string|null};
 export type RoomSummary={id:string;name:string;players:number;games:number;version:number;updated_at:string;deleted_at:string|null};
 export type CloudChange={id:string;room_id:string;version:number;kind:'game'|'player'|'settings'|'archive';entity_id:string;before_data:unknown;after_data:unknown;created_at:string;restored_from:string|null};
+function groupAccessDenied(error:unknown){const e=error as {code?:string;message?:string};return e?.code==='42501'||String(e?.message??error).includes('GROUP_NOT_FOUND');}
 export function validConfig(config:CloudConfig):boolean{
  if(!config||!/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/.test(config.url))return false;
  if(/^sb_publishable_[A-Za-z0-9_-]+$/.test(config.key))return true;
@@ -63,7 +64,7 @@ export function useCloud(onState:(state:State)=>void,enabled=true,workspace=true
  const fetchRoom=useCallback(async(id:string)=>{if(!reader)throw Error('NOT_CONNECTED');return reader.room(id,undefined,true);},[reader]);
  const reloadChanges=useCallback(async(id=target.current)=>{if(!client||!id)return [];const {data,error}=groupMode?await client.rpc('jr_group_changes',{target:id}):await client.from('jr_public_changes').select('id,room_id,version,kind,entity_id,before_data,after_data,created_at,restored_from').eq('room_id',id).order('version',{ascending:false}).order('created_at',{ascending:false}).limit(100);if(error)throw error;const list=(data??[]) as CloudChange[];if(id===target.current)setChanges(list);return list;},[client]);
  useEffect(()=>{if(!workspace||!client||!reader){setRooms([]);setLoading(false);return;}let alive=true,last:unknown;setLoading(true);
- const control=visibleSync(async fresh=>{try{if(fresh)reader.invalidate();const index=await reader.index();if(index!==last){await reloadRooms();last=index;}}catch(e){if(alive)setMessage(cloudMessage(e));}finally{if(alive)setLoading(false);}});
+ const control=visibleSync(async fresh=>{try{if(fresh)reader.invalidate();const index=await reader.index();if(index!==last){await reloadRooms();last=index;}}catch(e){if(alive){setMessage(cloudMessage(e));if(groupMode&&groupAccessDenied(e))setGroupError('このグループにはアクセスできません。運営者に確認してください。');}}finally{if(alive)setLoading(false);}});
  const channel=groupMode?null:client.channel('jr-public-catalog').on('postgres_changes',{event:'*',schema:'public',table:'jr_public_events'},()=>{reader.invalidate();void control.run();}).subscribe();
  return()=>{alive=false;control.stop();if(channel)void client.removeChannel(channel);};},[client,reader,reloadRooms,groupMode,workspace]);
  useEffect(()=>{generation.current++;ref.current=null;setRoom(null);setChanges([]);if(!workspace||!client||!reader||!roomId){setStatus(client?'大会を選択':'未接続');return;}let alive=true,realtime=false,historyVersion=-1;setStatus('接続中');
