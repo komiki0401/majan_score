@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
-import {ArrowUpRight,Bird,Check,ChevronDown,Play,Users} from 'lucide-react';
+import {ArrowUpRight,Bird,Check,ChevronDown,Users} from 'lucide-react';
 import logo from './assets/janroku-logo.webp';
 import {useCloud} from './cloud';
 import {GroupSharing} from './GroupSharing';
@@ -22,7 +22,7 @@ export function Landing(){
    <section hidden={!creationOpen} id="landing-group-creation" className="landing-start" ref={form} tabIndex={-1} aria-labelledby="start-title"><h2 id="start-title">仲間と使う、自分の雀録。</h2><p>名前を決めて、専用URLを仲間にシェア。</p>{creationOpen&&<CreateJanroku/>}<button className="text-button landing-close-creation" onClick={()=>setCreationOpen(false)}>グループ作成を閉じる</button></section>
   </div>
   <section className="sample-accordion" aria-label="サンプル体験">
-   <div className="sample-disclosure"><button id="sample-toggle" className="sample-toggle" aria-expanded={sampleOpen} aria-controls="sample-experience" onClick={()=>{setSampleStarted(true);setSampleOpen(value=>!value);}}><Play size={18}/><span>サンプルを体験する</span><ChevronDown className="sample-chevron" size={20}/></button><button className="sample-create" onClick={()=>setCreationOpen(true)} aria-expanded={creationOpen} aria-controls="landing-group-creation">自分の雀録を作る</button></div>
+   <div className="sample-disclosure"><button id="sample-toggle" className="sample-toggle" aria-expanded={sampleOpen} aria-controls="sample-experience" onClick={()=>{setSampleStarted(true);setSampleOpen(value=>!value);}}><span>サンプルを体験する</span><ChevronDown className="sample-chevron" size={20}/></button></div>
    <div id="sample-experience" role="region" aria-labelledby="sample-toggle" hidden={!sampleOpen}>{sampleStarted&&<App sample ephemeralSample onCreate={()=>setCreationOpen(true)}/>}</div>
   </section>
  </div>;
