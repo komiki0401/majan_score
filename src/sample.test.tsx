@@ -193,9 +193,40 @@ it('offers the two landing actions without polling existing tournament data',asy
  location.hash='';vi.useFakeTimers();
  localStorage.setItem('janroku-cloud-config',JSON.stringify({url:'https://test.supabase.co',key:'sb_publishable_test'}));
  const rpc=vi.fn(async()=>({data:{version:1},error:null}));vi.mocked(createClient).mockReturnValueOnce({rpc} as unknown as ReturnType<typeof createClient>);
- try{await act(async()=>root.render(<Landing/>));expect(host.querySelector('a[href="#sample"]')?.textContent).toContain('サンプルを体験する');expect(button('新しいグループを作成')).toBeTruthy();expect(host.querySelector('a[href="#legacy"]')).not.toBeNull();
+ try{await act(async()=>root.render(<Landing/>));expect(host.querySelector('.ranking-panel')).not.toBeNull();expect(button('自分の雀録を作る')).toBeTruthy();expect(host.querySelector('a[href="#legacy"]')).not.toBeNull();
  expect(host.querySelector<HTMLElement>('.landing-start')?.hidden).toBe(true);expect(host.querySelector('[aria-label="新しい雀録のグループ名"]')).toBeNull();
- await click(button('新しいグループを作成'));expect(host.querySelector<HTMLElement>('.landing-start')?.hidden).toBe(false);expect(host.querySelector('[aria-label="新しい雀録のグループ名"]')).not.toBeNull();
+ await click(button('自分の雀録を作る'));expect(host.querySelector<HTMLElement>('.landing-start')?.hidden).toBe(false);expect(host.querySelector('[aria-label="新しい雀録のグループ名"]')).not.toBeNull();
  expect(rpc.mock.calls).toHaveLength(1);await click(button('グループ作成を閉じる'));expect(host.querySelector<HTMLElement>('.landing-start')?.hidden).toBe(true);
  await act(async()=>vi.advanceTimersByTimeAsync(60000));expect(rpc.mock.calls).toHaveLength(1);}finally{vi.useRealTimers();}
+});
+
+it('lets visitors score and inspect graphs on the home page, then resets on reload without touching saved records',async()=>{
+ location.hash='';
+ const saved=freshSample();saved.rooms[0].state.name='過去のサンプル';saveSample(saved);
+ localStorage.setItem('janroku-v1','keep-real-records');
+ const before={...localStorage};
+ const network=vi.spyOn(globalThis,'fetch').mockRejectedValue(Error('No production access'));
+ await act(async()=>root.render(<Landing/>));
+ expect(host.querySelector('.ranking-panel')).not.toBeNull();
+ expect(host.textContent).toContain('リロードすると元に戻ります');
+ await click(button('スコア入力＋'));
+ for(const [i,score] of [80000,10000,5000,5000].entries())await input(host.querySelector(`[aria-label="${i+1}人目の持ち点"]`)!,String(score));
+ await click(button('計算結果を確認'));await click(button('この結果を保存'));
+ expect(host.querySelector('.rank-row strong')?.textContent).toBe('+90 pt');
+ await click(button('対局履歴'));expect(host.querySelectorAll('.history-card')).toHaveLength(2);expect(host.querySelectorAll('.point-chart circle')).toHaveLength(8);
+ expect({...localStorage}).toEqual(before);
+ await act(async()=>root.unmount());root=createRoot(host);await act(async()=>root.render(<Landing/>));
+ assertDashboard(freshSample().rooms[0].state);
+ await click(button('対局履歴'));expect(host.querySelectorAll('.history-card')).toHaveLength(1);
+ expect({...localStorage}).toEqual(before);expect(network).not.toHaveBeenCalled();expect(createClient).not.toHaveBeenCalled();
+});
+it('allows ephemeral sample input and reset when browser storage is unavailable',async()=>{
+ vi.spyOn(Storage.prototype,'getItem').mockImplementation(()=>{throw Error('Storage unavailable');});
+ const write=vi.spyOn(Storage.prototype,'setItem').mockImplementation(()=>{throw Error('Storage unavailable');});
+ vi.spyOn(window,'confirm').mockReturnValue(true);
+ await act(async()=>root.render(<App sample ephemeralSample/>));
+ await click(button('スコア入力＋'));await click(button('計算結果を確認'));await click(button('この結果を保存'));
+ await click(button('対局履歴'));expect(host.querySelectorAll('.history-card')).toHaveLength(2);
+ await click(button('サンプルデータをリセット'));assertDashboard(freshSample().rooms[0].state);
+ expect(write).not.toHaveBeenCalled();expect(createClient).not.toHaveBeenCalled();
 });

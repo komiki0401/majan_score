@@ -5,14 +5,14 @@ import {freshSample,loadSample,saveSample,type SampleStore} from './sample';
 import {emptyState,type State} from './domain';
 
 /** Storage adapter for the existing UI. This client has no network implementation. */
-export function useSampleCloud(onState:(state:State)=>void,enabled:boolean):CloudConnection{
- const [initial]=useState(()=>{if(!enabled)return {store:freshSample(),error:''};try{return {store:loadSample(),error:''};}catch(e){return {store:freshSample(),error:(e as Error).message};}});
+export function useSampleCloud(onState:(state:State)=>void,enabled:boolean,ephemeral=false):CloudConnection{
+ const [initial]=useState(()=>{if(!enabled||ephemeral)return {store:freshSample(),error:''};try{return {store:loadSample(),error:''};}catch(e){return {store:freshSample(),error:(e as Error).message};}});
  const [store,setStore]=useState(initial.store),[message,setMessage]=useState(initial.error);
  const current=useRef(store);current.current=store;
  const logs=useRef(new Map<string,{log:CloudChange;before:Room}>());
  const room=store.rooms.find(r=>r.id===store.selected)!;
  useEffect(()=>{if(enabled)onState(room.state);},[enabled,room,onState]);
- function commit(next:SampleStore){if(initial.error)throw Error(initial.error);saveSample(next);current.current=next;setStore(next);}
+ function commit(next:SampleStore){if(initial.error)throw Error(initial.error);if(!ephemeral)saveSample(next);current.current=next;setStore(next);}
  function appendRoom(state:State,id:string=crypto.randomUUID()):Room{const next:Room={id,state,version:1,updated_at:new Date().toISOString(),deleted_at:null};commit({...current.current,rooms:[...current.current.rooms,next]});return next;}
  function prepareSampleScore(day:string){
   const rooms=current.current.rooms,source=rooms.find(room=>room.id===current.current.selected)!;
@@ -32,7 +32,7 @@ export function useSampleCloud(onState:(state:State)=>void,enabled:boolean):Clou
   throw Error('Sample adapter does not support network operations');
  }}) as unknown as NonNullable<CloudConnection['client']>,[]);
  const changes=[...logs.current.values()].filter(item=>item.log.room_id===room.id).map(item=>item.log).reverse();
- return {readOnly:false,shortId:null,authorizeGroup:async()=>{throw Error('Sample has no editor keys');},editorShareURL:()=>null,prepareSampleScore,localRooms:enabled?store.rooms:undefined,resetSample:()=>{const next=freshSample();saveSample(next);current.current=next;setStore(next);logs.current.clear();setMessage('');},groupMode:true,groupName:'サンプルの雀録',groupError:'',groupAvailable:false,createGroup:async()=>{throw Error('トップページから本物のグループを作成してください。');},config:{url:'',key:''},client:enabled?client:null,roomId:room.id,room,rooms:store.rooms.map(r=>({id:r.id,name:r.state.name,players:r.state.players.length,games:r.state.games.length,version:r.version,updated_at:r.updated_at,deleted_at:r.deleted_at})),changes,status:'サンプル・ブラウザ内保存',message,setMessage,saving:false,loading:false,active:true,
+ return {readOnly:false,shortId:null,authorizeGroup:async()=>{throw Error('Sample has no editor keys');},editorShareURL:()=>null,prepareSampleScore,localRooms:enabled?store.rooms:undefined,resetSample:()=>{const next=freshSample();if(!ephemeral)saveSample(next);current.current=next;setStore(next);logs.current.clear();setMessage('');},groupMode:true,groupName:'サンプルの雀録',groupError:'',groupAvailable:false,createGroup:async()=>{throw Error('トップページから本物のグループを作成してください。');},config:{url:'',key:''},client:enabled?client:null,roomId:room.id,room,rooms:store.rooms.map(r=>({id:r.id,name:r.state.name,players:r.state.players.length,games:r.state.games.length,version:r.version,updated_at:r.updated_at,deleted_at:r.deleted_at})),changes,status:ephemeral?'サンプル・リロードでリセット':'サンプル・ブラウザ内保存',message,setMessage,saving:false,loading:false,active:true,
   configure:()=>{throw Error('Sample cannot connect to Supabase');},selectRoom:id=>{if(id&&current.current.rooms.some(r=>r.id===id))commit({...current.current,selected:id});},
   saveRemote:async next=>{if(initial.error)throw Error(initial.error);await update(current.current.selected,next);},renameRoom:async(id,name)=>{const r=current.current.rooms.find(r=>r.id===id)!;await update(id,{...r.state,name:name.trim()});},
   createRoom:async(state:State,autoNameDay?:string)=>{if(autoNameDay)state={...state,name:tournamentName(autoNameDay,current.current.rooms.map(room=>room.state.name))};return appendRoom(state);},

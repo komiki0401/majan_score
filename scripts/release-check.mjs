@@ -1,11 +1,14 @@
-import {execFileSync} from 'node:child_process';
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
 import {readFileSync,readdirSync} from 'node:fs';
 import {join,basename} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {loadEnv} from 'vite';
 
 const fail=message=>{throw new Error(message);};
-const git=(...args)=>execFileSync('git',args,{encoding:'utf8'}).trim();
+const execFileAsync=promisify(execFile);
+// Async execution also works in cloud runtimes that reject Node's sync spawn path.
+export const git=async(...args)=>(await execFileAsync('git',args,{encoding:'utf8'})).stdout.trim();
 export function hasSecret(text){
  if(/sb_secret_[A-Za-z0-9_-]{10,}|-----BEGIN (?:RSA |EC |OPENSSH |ENCRYPTED )?PRIVATE KEY-----/.test(text))return true;
  return [...text.matchAll(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g)].some(([token])=>{try{return JSON.parse(Buffer.from(token.split('.')[1],'base64url')).role==='service_role';}catch{return false;}});
@@ -15,8 +18,8 @@ function inspect(path){
 }
 function scanBuild(dir){for(const item of readdirSync(dir,{withFileTypes:true})){const path=join(dir,item.name);if(item.isSymbolicLink())fail('Unexpected symbolic link in build.');if(item.isDirectory())scanBuild(path);else inspect(path);}}
 async function main(){
- const tracked=git('ls-files','-z').split('\0').filter(Boolean);
- const files=git('ls-files','--cached','--others','--exclude-standard','-z').split('\0').filter(Boolean);
+ const tracked=(await git('ls-files','-z')).split('\0').filter(Boolean);
+ const files=(await git('ls-files','--cached','--others','--exclude-standard','-z')).split('\0').filter(Boolean);
  for(const path of files){const name=basename(path);if((name.startsWith('.env')&&name!=='.env.example')||/\.(pem|key|p12|pfx)$/i.test(name)||/^id_(rsa|ed25519|ecdsa)$/.test(name))fail('Environment/private-key file found in release sources.');inspect(path);}
  if(tracked.some(path=>basename(path).startsWith('.env')&&basename(path)!=='.env.example'))fail('Real environment file is tracked.');
  scanBuild('dist');

@@ -13,7 +13,7 @@ function ScopedApp(){
  // A new URL scope gets a fresh React tree: no previous group's caches or drafts survive.
  const route=entryRoute(hash);
  if(route==='admin')return <React.Suspense fallback={<main>管理画面を読み込み中…</main>}><AdminDashboard/></React.Suspense>;
- if(route==='sample')return <App key="sample" sample/>;
+ if(route==='sample')return <App key="sample" sample ephemeralSample/>;
  if(route==='workspace')return <App key={group.mode?hash:'legacy'}/>;
  return <Landing/>;
 }
