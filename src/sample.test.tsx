@@ -193,7 +193,7 @@ it('offers the two landing actions without polling existing tournament data',asy
  location.hash='';vi.useFakeTimers();
  localStorage.setItem('janroku-cloud-config',JSON.stringify({url:'https://test.supabase.co',key:'sb_publishable_test'}));
  const rpc=vi.fn(async()=>({data:{version:1},error:null}));vi.mocked(createClient).mockReturnValueOnce({rpc} as unknown as ReturnType<typeof createClient>);
- try{await act(async()=>root.render(<Landing/>));expect(host.querySelector('.ranking-panel')).not.toBeNull();expect(button('自分の雀録を作る')).toBeTruthy();expect(host.querySelector('a[href="#legacy"]')).not.toBeNull();
+ try{await act(async()=>root.render(<Landing/>));expect(host.querySelector('.ranking-panel')).toBeNull();expect(button('サンプルを体験する').getAttribute('aria-expanded')).toBe('false');expect(button('自分の雀録を作る')).toBeTruthy();expect(host.querySelector('a[href="#legacy"]')).not.toBeNull();
  expect(host.querySelector<HTMLElement>('.landing-start')?.hidden).toBe(true);expect(host.querySelector('[aria-label="新しい雀録のグループ名"]')).toBeNull();
  await click(button('自分の雀録を作る'));expect(host.querySelector<HTMLElement>('.landing-start')?.hidden).toBe(false);expect(host.querySelector('[aria-label="新しい雀録のグループ名"]')).not.toBeNull();
  expect(rpc.mock.calls).toHaveLength(1);await click(button('グループ作成を閉じる'));expect(host.querySelector<HTMLElement>('.landing-start')?.hidden).toBe(true);
@@ -207,6 +207,9 @@ it('lets visitors score and inspect graphs on the home page, then resets on relo
  const before={...localStorage};
  const network=vi.spyOn(globalThis,'fetch').mockRejectedValue(Error('No production access'));
  await act(async()=>root.render(<Landing/>));
+ expect(host.querySelector('.ranking-panel')).toBeNull();
+ await click(button('サンプルを体験する'));
+ expect(host.querySelector<HTMLElement>('#sample-experience')?.hidden).toBe(false);
  expect(host.querySelector('.ranking-panel')).not.toBeNull();
  expect(host.textContent).toContain('リロードすると元に戻ります');
  await click(button('スコア入力＋'));
@@ -215,7 +218,10 @@ it('lets visitors score and inspect graphs on the home page, then resets on relo
  expect(host.querySelector('.rank-row strong')?.textContent).toBe('+90 pt');
  await click(button('対局履歴'));expect(host.querySelectorAll('.history-card')).toHaveLength(2);expect(host.querySelectorAll('.point-chart circle')).toHaveLength(8);
  expect({...localStorage}).toEqual(before);
+ await click(button('サンプルを体験する'));expect(host.querySelector<HTMLElement>('#sample-experience')?.hidden).toBe(true);expect(button('サンプルを体験する').getAttribute('aria-expanded')).toBe('false');
+ await click(button('サンプルを体験する'));expect(host.querySelectorAll('.history-card')).toHaveLength(2);expect(host.querySelector<HTMLElement>('#sample-experience')?.hidden).toBe(false);
  await act(async()=>root.unmount());root=createRoot(host);await act(async()=>root.render(<Landing/>));
+ expect(host.querySelector<HTMLElement>('#sample-experience')?.hidden).toBe(true);await click(button('サンプルを体験する'));
  assertDashboard(freshSample().rooms[0].state);
  await click(button('対局履歴'));expect(host.querySelectorAll('.history-card')).toHaveLength(1);
  expect({...localStorage}).toEqual(before);expect(network).not.toHaveBeenCalled();expect(createClient).not.toHaveBeenCalled();
