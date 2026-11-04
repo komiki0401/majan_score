@@ -193,7 +193,7 @@ it('offers the two landing actions without polling existing tournament data',asy
  location.hash='';vi.useFakeTimers();
  localStorage.setItem('janroku-cloud-config',JSON.stringify({url:'https://test.supabase.co',key:'sb_publishable_test'}));
  const rpc=vi.fn(async()=>({data:{version:1},error:null}));vi.mocked(createClient).mockReturnValueOnce({rpc} as unknown as ReturnType<typeof createClient>);
- try{await act(async()=>root.render(<Landing/>));expect(host.querySelector('.ranking-panel')).toBeNull();expect(button('サンプルを体験する').getAttribute('aria-expanded')).toBe('false');expect(button('自分の雀録を作る')).toBeTruthy();expect(host.querySelector('a[href="#legacy"]')).not.toBeNull();
+ try{await act(async()=>root.render(<Landing/>));expect(host.querySelector('.ranking-panel')).toBeNull();expect(button('サンプルを体験する').getAttribute('aria-expanded')).toBe('false');expect(button('自分の雀録を作る')).toBeTruthy();expect(host.querySelector('a[href="#legacy"]')).toBeNull();
  expect(host.querySelector<HTMLElement>('.landing-start')?.hidden).toBe(true);expect(host.querySelector('[aria-label="新しい雀録のグループ名"]')).toBeNull();
  await click(button('自分の雀録を作る'));expect(host.querySelector<HTMLElement>('.landing-start')?.hidden).toBe(false);expect(host.querySelector('[aria-label="新しい雀録のグループ名"]')).not.toBeNull();
  expect(rpc.mock.calls).toHaveLength(1);await click(button('グループ作成を閉じる'));expect(host.querySelector<HTMLElement>('.landing-start')?.hidden).toBe(true);
